@@ -8,7 +8,6 @@ from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 
 from .context import AirlineAgentChatContext
 from .demo_data import apply_itinerary_defaults
-from .guardrails import jailbreak_guardrail, relevance_guardrail
 from .tools import (
     assign_special_service_seat,
     book_new_flight,
@@ -22,7 +21,7 @@ from .tools import (
     update_seat,
 )
 
-MODEL = "gpt-5.2"
+MODEL = "gpt-5.5"
 
 
 def seat_services_instructions(
@@ -52,7 +51,6 @@ seat_special_services_agent = Agent[AirlineAgentChatContext](
     handoff_description="Updates seats and handles medical or special service seating.",
     instructions=seat_services_instructions,
     tools=[update_seat, assign_special_service_seat, display_seat_map],
-    input_guardrails=[relevance_guardrail, jailbreak_guardrail],
 )
 
 
@@ -80,7 +78,6 @@ flight_information_agent = Agent[AirlineAgentChatContext](
     handoff_description="Provides flight status, connection impact, and alternate options.",
     instructions=flight_information_instructions,
     tools=[flight_status_tool, get_matching_flights],
-    input_guardrails=[relevance_guardrail, jailbreak_guardrail],
 )
 
 
@@ -109,7 +106,6 @@ booking_cancellation_agent = Agent[AirlineAgentChatContext](
     handoff_description="Handles new bookings, rebookings after delays, and cancellations.",
     instructions=booking_cancellation_instructions,
     tools=[cancel_flight, get_matching_flights, book_new_flight],
-    input_guardrails=[relevance_guardrail, jailbreak_guardrail],
 )
 
 
@@ -136,7 +132,6 @@ refunds_compensation_agent = Agent[AirlineAgentChatContext](
     handoff_description="Opens compensation cases and issues hotel/meal support after delays.",
     instructions=refunds_compensation_instructions,
     tools=[issue_compensation, faq_lookup_tool],
-    input_guardrails=[relevance_guardrail, jailbreak_guardrail],
 )
 
 
@@ -151,7 +146,6 @@ faq_agent = Agent[AirlineAgentChatContext](
     2. Use the faq_lookup_tool to get the answer. Do not rely on your own knowledge.
     3. Respond to the customer with the answer and, if compensation or baggage is needed, offer to transfer to the right agent.""",
     tools=[faq_lookup_tool],
-    input_guardrails=[relevance_guardrail, jailbreak_guardrail],
 )
 
 
@@ -170,7 +164,6 @@ triage_agent = Agent[AirlineAgentChatContext](
     ),
     tools=[get_trip_details],
     handoffs=[],
-    input_guardrails=[relevance_guardrail, jailbreak_guardrail],
 )
 
 

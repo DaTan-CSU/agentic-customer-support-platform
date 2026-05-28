@@ -4,6 +4,23 @@ import json
 import os
 from typing import Any, Dict
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# --- Route through third-party OpenAI-compatible provider (猫猫小铺) ---
+from openai import AsyncOpenAI
+from agents import set_default_openai_client, set_default_openai_api, set_tracing_disabled
+
+_base_url = os.environ.get("OPENAI_BASE_URL")
+if _base_url:
+    set_default_openai_client(
+        AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"], base_url=_base_url)
+    )
+    set_default_openai_api("chat_completions")
+    set_tracing_disabled(True)
+# ---------------------------------------------------------------------
+
 from chatkit.server import StreamingResult
 from fastapi import Depends, FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware

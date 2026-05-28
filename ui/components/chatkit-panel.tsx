@@ -32,7 +32,7 @@ export function ChatKitPanel({
       placeholder: "Message...",
     },
     history: {
-      enabled: false,
+      enabled: true,
     },
     theme: {
       colorScheme: "light",

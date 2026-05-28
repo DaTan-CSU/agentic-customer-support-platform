@@ -11,7 +11,7 @@ from agents import (
     input_guardrail,
 )
 
-GUARDRAIL_MODEL = "gpt-4.1-mini"
+GUARDRAIL_MODEL = "gpt-5.5"
 
 
 class RelevanceOutput(BaseModel):
