@@ -1,0 +1,60 @@
+# One-shot dev stack: `docker compose up --build`
+#
+# - backend listens on 8000 and ALSO spawns jd_realbackend on 9001 inside
+#   the same container (see python-backend/main.py startup hook), so only
+#   one service for the Python side.
+# - ui forwards /chatkit /stt /approvals /traces /attachments to the
+#   backend hostname inside the compose network.
+# - API keys are mounted, not baked: ~/Desktop/API key.txt + .env from
+#   project root.
+#
+# Override the API key location with KEY_FILE_HOST_PATH= if your file
+# isn't at ~/Desktop/API key.txt (e.g. CI / non-Windows hosts).
+
+services:
+  backend:
+    build:
+      context: ./python-backend
+    container_name: jdcs-backend
+    ports:
+      - "8000:8000"
+      - "9001:9001"
+    environment:
+      # Inside the container, ~/Desktop/API key.txt is /root/Desktop/API key.txt
+      # because we mount it there. main.py reads Path.home() / "Desktop".
+      HOME: /root
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      # Live-mount source for fast iteration.
+      - ./python-backend:/app
+      # Persist SQLite stores across container restarts.
+      - backend-data:/app/.data
+      # Bring the keyfile in read-only. KEY_FILE_HOST_PATH overrides the
+      # path; on Windows hosts the default falls back to %USERPROFILE%.
+      - type: bind
+        source: ${KEY_FILE_HOST_PATH:-${HOME:-${USERPROFILE}}/Desktop/API key.txt}
+        target: /root/Desktop/API key.txt
+        read_only: true
+
+  ui:
+    build:
+      context: ./ui
+    container_name: jdcs-ui
+    ports:
+      - "3000:3000"
+    environment:
+      # next.config.mjs rewrites point at 127.0.0.1:8000 by default — inside
+      # the compose network the backend is reachable by hostname `backend`.
+      # We export this so a future rewrite override can pick it up.
+      BACKEND_URL: http://backend:8000
+    volumes:
+      - ./ui:/app
+      # Anonymous volume avoids stomping node_modules with the host's tree.
+      - /app/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  backend-data:

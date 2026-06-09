@@ -1,0 +1,11 @@
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.tmp_*.py
+.backend.log
+.backend.log.err
+.agent_sessions.db
+.agent_sessions.db-*
+.agent_traces.db
+.agent_traces.db-*
