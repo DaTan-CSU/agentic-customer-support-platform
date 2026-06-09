@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AgentPanel } from "@/components/agent-panel";
 import { ChatKitPanel } from "@/components/chatkit-panel";
+import type { CaseSummary } from "@/components/summary-panel";
 import type { Agent, AgentEvent, GuardrailCheck } from "@/lib/types";
 import { fetchBootstrapState, fetchThreadState } from "@/lib/api";
 
@@ -12,6 +13,7 @@ export default function Home() {
   const [currentAgent, setCurrentAgent] = useState<string>("");
   const [guardrails, setGuardrails] = useState<GuardrailCheck[]>([]);
   const [context, setContext] = useState<Record<string, any>>({});
+  const [summary, setSummary] = useState<CaseSummary | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [initialThreadId, setInitialThreadId] = useState<string | null>(null);
 
@@ -56,6 +58,7 @@ export default function Home() {
         }))
       );
     }
+    setSummary((data.summary as CaseSummary | null) ?? null);
   }, []);
 
   useEffect(() => {
@@ -91,6 +94,7 @@ export default function Home() {
           }))
         );
       }
+      setSummary((bootstrap.summary as CaseSummary | null) ?? null);
     })();
   }, []);
 
@@ -103,7 +107,45 @@ export default function Home() {
   }, []);
 
   const handleResponseEnd = useCallback(() => {
+    // The structured CaseSummary lands a few seconds AFTER the assistant
+    // reply finishes (fire-and-forget on the backend). One hydrate at the
+    // end of the response would miss it, so we re-poll for up to 15s until
+    // a summary appears, then stop.
     void hydrateState(threadId);
+    if (!threadId) return;
+    let attempts = 0;
+    const timer = window.setInterval(async () => {
+      attempts += 1;
+      const data = await fetchThreadState(threadId);
+      if (data) {
+        setCurrentAgent(data.current_agent || "");
+        setContext(data.context || {});
+        if (Array.isArray(data.events)) {
+          setEvents(
+            data.events.map((e: any) => ({
+              ...e,
+              timestamp: new Date(e.timestamp ?? Date.now()),
+            }))
+          );
+        }
+        if (Array.isArray(data.guardrails)) {
+          setGuardrails(
+            data.guardrails.map((g: any) => ({
+              ...g,
+              timestamp: new Date(g.timestamp ?? Date.now()),
+            }))
+          );
+        }
+        if (data.summary) {
+          setSummary(data.summary as CaseSummary);
+          window.clearInterval(timer);
+          return;
+        }
+      }
+      if (attempts >= 8) {
+        window.clearInterval(timer);
+      }
+    }, 2000);
   }, [hydrateState, threadId]);
 
   return (
@@ -114,6 +156,8 @@ export default function Home() {
         events={events}
         guardrails={guardrails}
         context={context}
+        threadId={threadId}
+        summary={summary}
       />
       <ChatKitPanel
         initialThreadId={initialThreadId}

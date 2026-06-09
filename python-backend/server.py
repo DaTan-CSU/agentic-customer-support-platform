@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 import asyncio
 import json
 from typing import Any, AsyncIterator, Dict, List, Optional
@@ -16,11 +17,14 @@ from agents import (
     InputGuardrailTripwireTriggered,
     ItemHelpers,
     MessageOutputItem,
+    OutputGuardrailTripwireTriggered,
     Runner,
     ToolCallItem,
     ToolCallOutputItem,
+    SQLiteSession,
 )
 from agents.exceptions import MaxTurnsExceeded
+from agents.tracing import trace as agents_trace
 from chatkit.agents import stream_agent_response
 from chatkit.server import ChatKitServer
 from chatkit.types import (
@@ -37,15 +41,17 @@ from chatkit.types import (
 )
 from chatkit.store import NotFoundError
 
-from airline.context import AirlineAgentChatContext, AirlineAgentContext, create_initial_context, public_context
-from airline.agents import (
-    booking_cancellation_agent,
+from ecommerce.context import EcommerceAgentChatContext, EcommerceAgentContext, create_initial_context, public_context
+from ecommerce.agents import (
+    after_sales_agent,
     faq_agent,
-    flight_information_agent,
-    refunds_compensation_agent,
-    seat_special_services_agent,
+    logistics_agent,
+    order_agent,
     triage_agent,
 )
+from ecommerce.attachments import InMemoryAttachmentStore
+from ecommerce.summary_agent import CaseSummary, case_summary_agent
+from ecommerce.vision import describe_image
 from memory_store import MemoryStore
 
 
@@ -72,10 +78,9 @@ def _get_agent_by_name(name: str):
     agents = {
         triage_agent.name: triage_agent,
         faq_agent.name: faq_agent,
-        seat_special_services_agent.name: seat_special_services_agent,
-        flight_information_agent.name: flight_information_agent,
-        booking_cancellation_agent.name: booking_cancellation_agent,
-        refunds_compensation_agent.name: refunds_compensation_agent,
+        order_agent.name: order_agent,
+        logistics_agent.name: logistics_agent,
+        after_sales_agent.name: after_sales_agent,
     }
     return agents.get(name, triage_agent)
 
@@ -109,10 +114,9 @@ def _build_agents_list() -> List[Dict[str, Any]]:
     return [
         make_agent_dict(triage_agent),
         make_agent_dict(faq_agent),
-        make_agent_dict(seat_special_services_agent),
-        make_agent_dict(flight_information_agent),
-        make_agent_dict(booking_cancellation_agent),
-        make_agent_dict(refunds_compensation_agent),
+        make_agent_dict(order_agent),
+        make_agent_dict(logistics_agent),
+        make_agent_dict(after_sales_agent),
     ]
 
 
@@ -138,21 +142,80 @@ def _parse_tool_args(raw_args: Any) -> Any:
 
 @dataclass
 class ConversationState:
-    input_items: List[Any] = field(default_factory=list)
-    context: AirlineAgentContext = field(default_factory=create_initial_context)
+    context: EcommerceAgentContext = field(default_factory=create_initial_context)
     current_agent_name: str = triage_agent.name
     events: List[AgentEvent] = field(default_factory=list)
     guardrails: List[GuardrailCheck] = field(default_factory=list)
+    # Populated by case_summary_agent after each successful turn (structured
+    # output). None until the first summary lands. We keep the latest only;
+    # the SDK rebuilds it from session history each turn.
+    summary: Optional[CaseSummary] = None
 
 
-class AirlineServer(ChatKitServer[dict[str, Any]]):
+SESSION_DB_PATH = Path(__file__).with_name(".agent_sessions.db")
+
+
+class EcommerceChatKitServer(ChatKitServer[dict[str, Any]]):
     def __init__(self) -> None:
         self.store = MemoryStore()
-        super().__init__(self.store)
+        self.attachment_store = InMemoryAttachmentStore()
+        super().__init__(self.store, attachment_store=self.attachment_store)
         self._state: Dict[str, ConversationState] = {}
         self._listeners: Dict[str, list[asyncio.Queue]] = {}
         self._last_event_index: Dict[str, int] = {}
         self._last_snapshot: Dict[str, str] = {}
+        # Anchor fire-and-forget summary tasks so the event loop doesn't GC
+        # them mid-flight. Tasks self-remove from this set on completion.
+        self._summary_tasks: set[asyncio.Task] = set()
+
+    def _session_for_thread(self, thread_id: str) -> SQLiteSession:
+        return SQLiteSession(thread_id, db_path=SESSION_DB_PATH)
+
+    async def _refresh_summary(self, thread: ThreadMetadata) -> None:
+        """Compute a fresh CaseSummary from the session transcript and stash it.
+
+        Fire-and-forget — runs after each assistant turn so the chat SSE isn't
+        delayed. Failure is non-fatal (the demo just shows the previous
+        summary, or 'no summary' if none yet).
+        """
+        try:
+            sess = self._session_for_thread(thread.id)
+            items = await sess.get_items()
+            if not items:
+                return
+            # Flatten into a transcript the summary agent can read directly.
+            lines: List[str] = []
+            for it in items[-20:]:  # last 20 items is plenty for triage
+                role = it.get("role") or it.get("type") or "?"
+                content = it.get("content", "")
+                if isinstance(content, list):
+                    content = " ".join(
+                        c.get("text", "") for c in content if isinstance(c, dict)
+                    )
+                if isinstance(content, str) and content.strip():
+                    lines.append(f"{role}: {content[:300]}")
+            if not lines:
+                return
+            transcript = "\n".join(lines)
+            result = await Runner.run(case_summary_agent, transcript)
+            if isinstance(result.final_output, CaseSummary):
+                state = self._state_for_thread(thread.id)
+                state.summary = result.final_output
+                # Broadcast through the state stream so the panel updates live.
+                await self._broadcast_state(thread, {})
+        except Exception:
+            # Fail-quiet — summary is a side observation, not a correctness path.
+            pass
+
+    def _kick_summary(self, thread: ThreadMetadata) -> None:
+        """Schedule a fire-and-forget summary refresh, anchoring the task."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        task = loop.create_task(self._refresh_summary(thread))
+        self._summary_tasks.add(task)
+        task.add_done_callback(self._summary_tasks.discard)
 
     def _state_for_thread(self, thread_id: str) -> ConversationState:
         if thread_id not in self._state:
@@ -228,7 +291,7 @@ class AirlineServer(ChatKitServer[dict[str, Any]]):
         run_items: List[Any],
         current_agent_name: str,
         thread_id: str,
-    ) -> (List[AgentEvent], str):
+    ) -> tuple[List[AgentEvent], str]:
         events: List[AgentEvent] = []
         active_agent = current_agent_name
         for item in run_items:
@@ -311,6 +374,23 @@ class AirlineServer(ChatKitServer[dict[str, Any]]):
 
         return events, active_agent
 
+    async def _describe_attachments(self, message: UserMessageItem) -> str:
+        """Describe any image attachments via 百炼 and return an injectable note."""
+        notes: List[str] = []
+        for att in getattr(message, "attachments", []) or []:
+            if getattr(att, "type", None) != "image":
+                continue
+            rec = self.attachment_store.get_bytes(att.id)
+            if rec is None:
+                continue
+            data, mime = rec
+            desc = await describe_image(data, mime)
+            if desc:
+                notes.append(desc)
+        if not notes:
+            return ""
+        return f"[用户上传了图片，图片内容：{' '.join(notes)}]"
+
     async def respond(
         self,
         thread: ThreadMetadata,
@@ -319,12 +399,20 @@ class AirlineServer(ChatKitServer[dict[str, Any]]):
     ) -> AsyncIterator[ThreadStreamEvent]:
         state = self._state_for_thread(thread.id)
         user_text = ""
+        run_input: List[Dict[str, Any]] = []
         if input_user_message is not None:
             user_text = _user_message_to_text(input_user_message)
-            state.input_items.append({"content": user_text, "role": "user"})
+            # Perception step: if the user attached an image, describe it on 百炼
+            # (fast) and inject the description as text. The gpt-5.5 agents and
+            # guardrails then run text-only on that description.
+            image_note = await self._describe_attachments(input_user_message)
+            combined = user_text
+            if image_note:
+                combined = f"{user_text}\n\n{image_note}" if user_text else image_note
+            run_input = [{"content": combined, "role": "user"}]
 
         previous_context = public_context(state.context)
-        chat_context = AirlineAgentChatContext(
+        chat_context = EcommerceAgentChatContext(
             thread=thread,
             store=self.store,
             request_context=context,
@@ -335,11 +423,22 @@ class AirlineServer(ChatKitServer[dict[str, Any]]):
         # Tell the client which thread to bind runner updates to before streaming starts.
         yield ClientEffectEvent(name="runner_bind_thread", data={"thread_id": thread.id, "ts": time.time()})
 
+        # Wrap the run in a trace so all SDK-generated spans (agent / LLM /
+        # tool / guardrail / handoff) are attached and tagged with thread_id —
+        # the local SQLiteTraceProcessor uses that to populate /traces.
+        # We `__enter__` here and explicitly `__exit__` at every return path
+        # below to avoid re-indenting the whole streaming loop.
+        trace_ctx = agents_trace(
+            workflow_name=f"ecommerce/{state.current_agent_name}",
+            metadata={"thread_id": thread.id},
+        )
+        trace_ctx.__enter__()
         try:
             result = Runner.run_streamed(
                 _get_agent_by_name(state.current_agent_name),
-                state.input_items,
+                run_input,
                 context=chat_context,
+                session=self._session_for_thread(thread.id),
             )
             # chatkit-agents stamps every AssistantMessageItem with placeholder id '__fake_id__';
             # ChatKit client keys messages by id, so duplicates collapse into the same DOM node
@@ -358,31 +457,29 @@ class AirlineServer(ChatKitServer[dict[str, Any]]):
                 if isinstance(event, ProgressUpdateEvent) or getattr(event, "type", "") == "progress_update_event":
                     # Ignore progress updates for the Runner panel; ChatKit will handle them separately.
                     continue
-                # If this is a run-item event, convert and broadcast immediately.
+                # Per-event live preview: turn the SDK item into our AgentEvent
+                # only for the UI broadcast — do NOT extend state.events here,
+                # the `result.new_items` block below is the single source of
+                # truth (writing in both branches double-counts events in the
+                # Runner panel).
                 if hasattr(event, "item"):
                     try:
                         run_item = getattr(event, "item")
-                        new_events, active_agent = self._record_events(
+                        preview_events, _ = self._record_events(
                             [run_item], state.current_agent_name, thread.id
                         )
-                        if new_events:
-                            state.events.extend(new_events)
-                            state.current_agent_name = active_agent
-                            await self._broadcast_state(thread, context)
-                            yield ClientEffectEvent(
-                                name="runner_state_update",
-                                data={"thread_id": thread.id, "ts": time.time()},
-                            )
+                        if preview_events:
                             yield ClientEffectEvent(
                                 name="runner_event_delta",
                                 data={
                                     "thread_id": thread.id,
                                     "ts": time.time(),
-                                    "events": [e.model_dump() for e in new_events],
+                                    "events": [e.model_dump() for e in preview_events],
                                 },
                             )
-                    except Exception as err:
-                        pass
+                    except Exception:
+                        import traceback as _tb
+                        _tb.print_exc()
                 yield event
                 new_items = result.new_items[streamed_items_seen:]
                 if new_items:
@@ -407,6 +504,8 @@ class AirlineServer(ChatKitServer[dict[str, Any]]):
                     )
         except MaxTurnsExceeded:
             await self._broadcast_state(thread, context)
+            trace_ctx.__exit__(None, None, None)
+            return
         except InputGuardrailTripwireTriggered as exc:
             failed_guardrail = exc.guardrail_result.guardrail
             gr_output = exc.guardrail_result.output.output_info
@@ -425,8 +524,10 @@ class AirlineServer(ChatKitServer[dict[str, Any]]):
                     )
                 )
             state.guardrails = checks
-            refusal = "Sorry, I can only answer questions related to airline travel."
-            state.input_items.append({"role": "assistant", "content": refusal})
+            refusal = "抱歉，我只能回答京东购物相关的问题。"
+            await self._session_for_thread(thread.id).add_items(
+                [*run_input, {"role": "assistant", "content": refusal}]
+            )
             yield ThreadItemDoneEvent(
                 item=AssistantMessageItem(
                     id=self.store.generate_item_id("message", thread, context),
@@ -435,8 +536,32 @@ class AirlineServer(ChatKitServer[dict[str, Any]]):
                     content=[AssistantMessageContent(text=refusal)],
                 )
             )
+            trace_ctx.__exit__(None, None, None)
             return
-        state.input_items = result.to_input_list()
+        except OutputGuardrailTripwireTriggered as exc:
+            # The assistant's draft answer hit an output guardrail (PII / false
+            # promise / brand). Pull the guardrail's `output_info` and rewrite
+            # the reply: PII → masked text, others → a safe boilerplate.
+            info = getattr(exc.guardrail_result.output, "output_info", None)
+            masked = getattr(info, "masked_output", None)
+            safe_reply = (
+                masked
+                if isinstance(masked, str) and masked.strip()
+                else "抱歉，回复内容触发了出口合规审查，请换一种问法再试。"
+            )
+            await self._session_for_thread(thread.id).add_items(
+                [*run_input, {"role": "assistant", "content": safe_reply}]
+            )
+            yield ThreadItemDoneEvent(
+                item=AssistantMessageItem(
+                    id=self.store.generate_item_id("message", thread, context),
+                    thread_id=thread.id,
+                    created_at=datetime.now(),
+                    content=[AssistantMessageContent(text=safe_reply)],
+                )
+            )
+            trace_ctx.__exit__(None, None, None)
+            return
         remaining_items = result.new_items[streamed_items_seen:]
         new_events, active_agent = self._record_events(remaining_items, state.current_agent_name, thread.id)
         state.events.extend(new_events)
@@ -479,6 +604,10 @@ class AirlineServer(ChatKitServer[dict[str, Any]]):
                     "events": [e.model_dump() for e in new_events],
                 },
             )
+        trace_ctx.__exit__(None, None, None)
+        # Side-channel: refresh the structured CaseSummary off the critical
+        # path; UI receives it via the state stream when ready.
+        self._kick_summary(thread)
 
     async def action(
         self,
@@ -501,6 +630,7 @@ class AirlineServer(ChatKitServer[dict[str, Any]]):
             "agents": _build_agents_list(),
             "events": [e.model_dump() for e in state.events],
             "guardrails": [g.model_dump() for g in state.guardrails],
+            "summary": state.summary.model_dump() if state.summary else None,
         }
 
     # -- Streaming state updates to UI listeners ---------------------------------

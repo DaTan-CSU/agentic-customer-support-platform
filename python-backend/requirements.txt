@@ -1,5 +1,11 @@
 openai-agents
 openai-chatkit
-pydantic
+mcp
 fastapi
 uvicorn
+python-dotenv
+python-multipart
+httpx
+pydantic
+numpy
+tencentcloud-sdk-python-asr

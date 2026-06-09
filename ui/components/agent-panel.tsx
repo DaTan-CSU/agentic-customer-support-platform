@@ -6,6 +6,9 @@ import { AgentsList } from "./agents-list";
 import { Guardrails } from "./guardrails";
 import { ConversationContext } from "./conversation-context";
 import { RunnerOutput } from "./runner-output";
+import { TracesPanel } from "./traces-panel";
+import { ApprovalsPanel } from "./approvals-panel";
+import { SummaryPanel, type CaseSummary } from "./summary-panel";
 
 interface AgentPanelProps {
   agents: Agent[];
@@ -13,6 +16,8 @@ interface AgentPanelProps {
   events: AgentEvent[];
   guardrails: GuardrailCheck[];
   context: Record<string, any>;
+  threadId: string | null;
+  summary: CaseSummary | null;
 }
 
 export function AgentPanel({
@@ -21,6 +26,8 @@ export function AgentPanel({
   events,
   guardrails,
   context,
+  threadId,
+  summary,
 }: AgentPanelProps) {
   const activeAgent = agents.find((a) => a.name === currentAgent);
   const runnerEvents = events.filter(
@@ -35,11 +42,12 @@ export function AgentPanel({
           Agent View
         </h1>
         <span className="ml-auto text-xs font-light tracking-wide opacity-80">
-          Airline&nbsp;Co.
+          京东客服
         </span>
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 bg-gray-50/50">
+        <SummaryPanel summary={summary} />
         <AgentsList agents={agents} currentAgent={currentAgent} />
         <ConversationContext context={context} />
         <Guardrails
@@ -47,6 +55,8 @@ export function AgentPanel({
           inputGuardrails={activeAgent?.input_guardrails ?? []}
         />
         <RunnerOutput runnerEvents={runnerEvents} />
+        <ApprovalsPanel threadId={threadId} refetchKey={events.length} />
+        <TracesPanel threadId={threadId} refetchKey={events.length} />
       </div>
     </div>
   );

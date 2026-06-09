@@ -1,0 +1,289 @@
+{
+  "DMO20260101": {
+    "order_id": "DMO20260101",
+    "user_id": "u1001",
+    "status": "delivered",
+    "status_label": "已签收",
+    "created_at": "2026-05-20 09:14",
+    "amount": 142.8,
+    "payment": "在线支付（微信）",
+    "address_city": "上海市浦东新区",
+    "items": [
+      {"sku": "SKU88012", "name": "361°男子运动套装 2024春季速干透气", "price": 142.8, "qty": 1}
+    ],
+    "logistics": {
+      "carrier": "京东物流",
+      "tracking_no": "JD0050261001",
+      "delayed": false,
+      "expected_delivery": "2026-05-22",
+      "timeline": [
+        {"time": "2026-05-20 10:02", "status": "已下单", "location": "上海"},
+        {"time": "2026-05-20 18:40", "status": "已出库", "location": "上海亚一仓"},
+        {"time": "2026-05-21 07:15", "status": "运输中", "location": "上海转运中心"},
+        {"time": "2026-05-21 19:30", "status": "派送中", "location": "浦东新区张江站"},
+        {"time": "2026-05-22 11:08", "status": "已签收", "location": "本人签收"}
+      ]
+    },
+    "after_sales": null
+  },
+  "DMO20260102": {
+    "order_id": "DMO20260102",
+    "user_id": "u1002",
+    "status": "in_transit_delayed",
+    "status_label": "运输中（延迟）",
+    "created_at": "2026-05-28 10:12",
+    "amount": 3299.0,
+    "payment": "在线支付（京东支付）",
+    "address_city": "青海省西宁市",
+    "items": [
+      {"sku": "SKU77203", "name": "索尼A6700 微单相机 单机身", "price": 3299.0, "qty": 1}
+    ],
+    "logistics": {
+      "carrier": "京东物流",
+      "tracking_no": "JD0050261002",
+      "delayed": true,
+      "expected_delivery": "2026-05-31",
+      "timeline": [
+        {"time": "2026-05-28 12:00", "status": "已下单", "location": "北京"},
+        {"time": "2026-05-28 20:30", "status": "已出库", "location": "北京亚一仓"},
+        {"time": "2026-05-29 09:45", "status": "运输中", "location": "兰州转运中心"},
+        {"time": "2026-05-30 08:20", "status": "运输中（天气原因延误）", "location": "兰州转运中心"}
+      ]
+    },
+    "after_sales": null
+  },
+  "DMO20260103": {
+    "order_id": "DMO20260103",
+    "user_id": "u1003",
+    "status": "after_sale_processing",
+    "status_label": "售后处理中（退货）",
+    "created_at": "2026-05-15 16:48",
+    "amount": 899.0,
+    "payment": "在线支付（微信）",
+    "address_city": "广东省深圳市南山区",
+    "items": [
+      {"sku": "SKU60188", "name": "美的电烤箱 35L 家用多功能", "price": 899.0, "qty": 1}
+    ],
+    "logistics": {
+      "carrier": "京东物流",
+      "tracking_no": "JD0050261003",
+      "delayed": false,
+      "expected_delivery": "2026-05-17",
+      "timeline": [
+        {"time": "2026-05-15 17:10", "status": "已下单", "location": "深圳"},
+        {"time": "2026-05-16 08:00", "status": "已出库", "location": "深圳仓"},
+        {"time": "2026-05-17 14:22", "status": "已签收", "location": "本人签收"}
+      ]
+    },
+    "after_sales": {
+      "case_id": "AS20260520001",
+      "type": "return",
+      "type_label": "7天无理由退货",
+      "status": "processing",
+      "status_label": "审核中",
+      "reason": "商品与描述不符",
+      "applied_at": "2026-05-20 10:30"
+    }
+  },
+  "DMO20260104": {
+    "order_id": "DMO20260104",
+    "user_id": "u1004",
+    "status": "refunded",
+    "status_label": "退款已完成",
+    "created_at": "2026-05-10 11:05",
+    "amount": 259.0,
+    "payment": "在线支付（京东支付）",
+    "address_city": "四川省成都市武侯区",
+    "items": [
+      {"sku": "SKU51002", "name": "九阳豆浆机 破壁免滤", "price": 259.0, "qty": 1}
+    ],
+    "logistics": {
+      "carrier": "京东物流",
+      "tracking_no": "JD0050261004",
+      "delayed": false,
+      "expected_delivery": "2026-05-12",
+      "timeline": [
+        {"time": "2026-05-10 11:30", "status": "已下单", "location": "成都"},
+        {"time": "2026-05-11 09:00", "status": "已出库", "location": "成都仓"},
+        {"time": "2026-05-12 15:40", "status": "已签收", "location": "代收点签收"}
+      ]
+    },
+    "after_sales": {
+      "case_id": "AS20260514002",
+      "type": "refund",
+      "type_label": "退货退款",
+      "status": "completed",
+      "status_label": "退款已到账",
+      "reason": "质量问题（开机异响）",
+      "applied_at": "2026-05-14 09:12",
+      "refund_amount": 259.0,
+      "refund_to": "原支付账户",
+      "completed_at": "2026-05-18 16:00"
+    }
+  },
+  "DMO20260105": {
+    "order_id": "DMO20260105",
+    "user_id": "u1005",
+    "status": "in_transit",
+    "status_label": "运输中",
+    "created_at": "2026-05-30 14:20",
+    "amount": 1599.0,
+    "payment": "在线支付（微信）",
+    "address_city": "湖北省武汉市洪山区",
+    "items": [
+      {"sku": "SKU33015", "name": "戴森吹风机 HD08 直流无刷电机", "price": 1599.0, "qty": 1}
+    ],
+    "logistics": {
+      "carrier": "京东物流",
+      "tracking_no": "JD0050261005",
+      "delayed": false,
+      "expected_delivery": "2026-06-02",
+      "timeline": [
+        {"time": "2026-05-30 15:00", "status": "已下单", "location": "武汉"},
+        {"time": "2026-05-31 08:30", "status": "已出库", "location": "武汉仓"},
+        {"time": "2026-06-01 07:50", "status": "运输中", "location": "武汉转运中心"}
+      ]
+    },
+    "after_sales": null
+  },
+  "DMO20260106": {
+    "order_id": "DMO20260106",
+    "user_id": "u1006",
+    "status": "pending_shipment",
+    "status_label": "待发货",
+    "created_at": "2026-06-01 08:05",
+    "amount": 49.9,
+    "payment": "在线支付（京东支付）",
+    "address_city": "浙江省杭州市西湖区",
+    "items": [
+      {"sku": "SKU10277", "name": "得力中性笔 0.5mm 黑色 12支装", "price": 49.9, "qty": 1}
+    ],
+    "logistics": {
+      "carrier": "京东物流",
+      "tracking_no": "JD0050261006",
+      "delayed": false,
+      "expected_delivery": "2026-06-03",
+      "timeline": [
+        {"time": "2026-06-01 08:10", "status": "已下单", "location": "杭州"}
+      ]
+    },
+    "after_sales": null
+  },
+  "DMO20260107": {
+    "order_id": "DMO20260107",
+    "user_id": "u1007",
+    "status": "after_sale_processing",
+    "status_label": "售后处理中（换货）",
+    "created_at": "2026-05-22 19:33",
+    "amount": 4999.0,
+    "payment": "在线支付（微信）",
+    "address_city": "北京市海淀区",
+    "items": [
+      {"sku": "SKU90011", "name": "联想小新Pro16 笔记本电脑 16G+512G", "price": 4999.0, "qty": 1}
+    ],
+    "logistics": {
+      "carrier": "京东物流",
+      "tracking_no": "JD0050261007",
+      "delayed": false,
+      "expected_delivery": "2026-05-24",
+      "timeline": [
+        {"time": "2026-05-22 20:00", "status": "已下单", "location": "北京"},
+        {"time": "2026-05-23 09:10", "status": "已出库", "location": "北京亚一仓"},
+        {"time": "2026-05-24 13:25", "status": "已签收", "location": "本人签收"}
+      ]
+    },
+    "after_sales": {
+      "case_id": "AS20260526003",
+      "type": "exchange",
+      "type_label": "换货",
+      "status": "processing",
+      "status_label": "等待寄回",
+      "reason": "屏幕有亮点（质量问题）",
+      "applied_at": "2026-05-26 11:40"
+    }
+  },
+  "DMO20260108": {
+    "order_id": "DMO20260108",
+    "user_id": "u1008",
+    "status": "cancelled",
+    "status_label": "已取消",
+    "created_at": "2026-05-29 22:11",
+    "amount": 129.0,
+    "payment": "未支付",
+    "address_city": "江苏省南京市鼓楼区",
+    "items": [
+      {"sku": "SKU20455", "name": "南极人纯棉四件套 1.8m床", "price": 129.0, "qty": 1}
+    ],
+    "logistics": {
+      "carrier": null,
+      "tracking_no": null,
+      "delayed": false,
+      "expected_delivery": null,
+      "timeline": [
+        {"time": "2026-05-29 22:11", "status": "已下单（待支付）", "location": "南京"},
+        {"time": "2026-05-30 22:15", "status": "超时未支付，订单已取消", "location": "系统"}
+      ]
+    },
+    "after_sales": null
+  },
+  "DMO20260109": {
+    "order_id": "DMO20260109",
+    "user_id": "u1009",
+    "status": "partially_shipped",
+    "status_label": "部分发货（拆单）",
+    "created_at": "2026-05-31 13:40",
+    "amount": 568.0,
+    "payment": "在线支付（京东支付）",
+    "address_city": "山东省青岛市市南区",
+    "items": [
+      {"sku": "SKU44021", "name": "飞利浦电动牙刷 HX6730", "price": 329.0, "qty": 1},
+      {"sku": "SKU44099", "name": "替换刷头 4支装", "price": 239.0, "qty": 1}
+    ],
+    "logistics": {
+      "carrier": "京东物流",
+      "tracking_no": "JD0050261009A",
+      "delayed": false,
+      "expected_delivery": "2026-06-03",
+      "timeline": [
+        {"time": "2026-05-31 14:00", "status": "已下单", "location": "青岛"},
+        {"time": "2026-06-01 08:45", "status": "已出库（包裹1/2：电动牙刷）", "location": "青岛仓"},
+        {"time": "2026-06-01 09:00", "status": "待发货（包裹2/2：替换刷头，缺货调拨中）", "location": "青岛仓"}
+      ]
+    },
+    "after_sales": null
+  },
+  "DMO20260110": {
+    "order_id": "DMO20260110",
+    "user_id": "u1010",
+    "status": "delivered",
+    "status_label": "已签收（申请价保中）",
+    "created_at": "2026-05-25 10:00",
+    "amount": 5999.0,
+    "payment": "在线支付（微信）",
+    "address_city": "广东省广州市天河区",
+    "items": [
+      {"sku": "SKU70001", "name": "Apple iPhone 16 128G 黑色", "price": 5999.0, "qty": 1}
+    ],
+    "logistics": {
+      "carrier": "京东物流",
+      "tracking_no": "JD0050261010",
+      "delayed": false,
+      "expected_delivery": "2026-05-26",
+      "timeline": [
+        {"time": "2026-05-25 10:20", "status": "已下单", "location": "广州"},
+        {"time": "2026-05-25 18:00", "status": "已出库", "location": "广州仓"},
+        {"time": "2026-05-26 12:30", "status": "已签收", "location": "本人签收"}
+      ]
+    },
+    "after_sales": {
+      "case_id": "AS20260530004",
+      "type": "price_protection",
+      "type_label": "价格保护",
+      "status": "processing",
+      "status_label": "审核中",
+      "reason": "下单后7天内降价200元",
+      "applied_at": "2026-05-30 09:00",
+      "refund_amount": 200.0
+    }
+  }
+}

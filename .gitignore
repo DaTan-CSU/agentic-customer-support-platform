@@ -59,6 +59,15 @@ coverage.xml
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+.agent_sessions.db
+.agent_sessions.db-*
+.agent_traces.db
+.agent_traces.db-*
+# Backend runtime logs (captured by ad-hoc PowerShell launchers)
+.backend.log
+.backend.log.err
+# One-shot debug scripts kept outside git history
+.tmp_*.py
 
 # Flask stuff:
 instance/

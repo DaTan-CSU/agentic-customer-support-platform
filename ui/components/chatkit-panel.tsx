@@ -1,7 +1,8 @@
 "use client";
 
 import { ChatKit, useChatKit } from "@openai/chatkit-react";
-import React from "react";
+import React, { useCallback } from "react";
+import { VoiceInput } from "./voice-input";
 
 type ChatKitPanelProps = {
   initialThreadId?: string | null;
@@ -27,9 +28,18 @@ export function ChatKitPanel({
     api: {
       url: "/chatkit",
       domainKey: CHATKIT_DOMAIN_KEY,
+      uploadStrategy: { type: "two_phase" },
     },
     composer: {
-      placeholder: "Message...",
+      placeholder: "输入消息…",
+      attachments: {
+        enabled: true,
+        maxCount: 1,
+        maxSize: 10 * 1024 * 1024,
+        accept: {
+          "image/*": [".png", ".jpg", ".jpeg", ".webp", ".gif"],
+        },
+      },
     },
     history: {
       enabled: true,
@@ -47,17 +57,19 @@ export function ChatKitPanel({
     },
     initialThread: initialThreadId ?? null,
     startScreen: {
-      greeting: "Hi! I'm your airline assistant. How can I help today?",
+      greeting: "你好！我是京东购物助手，可以帮你查订单、查物流、查售后政策。",
       prompts: [
-        { label: "Change my seat", prompt: "Can you move me to seat 14C?" },
         {
-          label: "Flight status",
-          prompt: "What's the status of flight FLT-123?",
+          label: "查订单",
+          prompt: "帮我查一下订单 DMO20260101 的信息",
         },
         {
-          label: "Missed connection",
-          prompt:
-            "My flight from Paris to New York was delayed and I missed my connection to Austin. Also, my checked bag is missing and I need to spend the night in New York. Can you help me?",
+          label: "查物流",
+          prompt: "订单 DMO20260101 的物流到哪了？",
+        },
+        {
+          label: "退货政策",
+          prompt: "京东自营的7天无理由退货规则是怎样的？",
         },
       ],
     },
@@ -69,21 +81,37 @@ export function ChatKitPanel({
     onError: ({ error }) => {
       console.error("ChatKit error", error);
     },
-    onEffect: async ({ name }) => {
+    onEffect: async ({ name, data }) => {
+      const effectData = data as { events?: any[]; thread_id?: string } | undefined;
       if (name === "runner_state_update") {
         onRunnerUpdate?.();
       }
       if (name === "runner_event_delta") {
-        onRunnerEventDelta?.((arguments as any)?.[0]?.data?.events ?? []);
+        onRunnerEventDelta?.(effectData?.events ?? []);
       }
       if (name === "runner_bind_thread") {
-        const tid = (arguments as any)?.[0]?.data?.thread_id;
+        const tid = effectData?.thread_id;
         if (tid) {
           onRunnerBindThread?.(tid);
         }
       }
     },
   });
+
+  // Voice-input → composer plumbing. ChatKit React exposes `setComposerValue`
+  // on the hook return; we hand it the STT transcript so the text lands in
+  // the composer textarea for the user to review and send manually.
+  const handleVoiceTranscribed = useCallback(
+    (text: string) => {
+      try {
+        chatkit.setComposerValue?.({ text });
+        chatkit.focusComposer?.();
+      } catch (err) {
+        console.error("setComposerValue failed", err);
+      }
+    },
+    [chatkit]
+  );
 
   return (
     <div className="flex flex-col h-full flex-1 bg-white shadow-sm border border-gray-200 border-t-0 rounded-xl">
@@ -92,13 +120,14 @@ export function ChatKitPanel({
           Customer View
         </h2>
       </div>
-      <div className="flex-1 overflow-hidden pb-1.5">
+      <div className="flex-1 overflow-hidden">
         <ChatKit
           control={chatkit.control}
           className="block h-full w-full"
           style={{ height: "100%", width: "100%" }}
         />
       </div>
+      <VoiceInput onTranscribed={handleVoiceTranscribed} />
     </div>
   );
 }

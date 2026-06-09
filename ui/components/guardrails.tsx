@@ -12,15 +12,18 @@ interface GuardrailsProps {
 }
 
 export function Guardrails({ guardrails, inputGuardrails }: GuardrailsProps) {
+  // 后端 @input_guardrail(name=...) 给的英文名保持原样作为技术 key，
+  // 这里仅做 UI 显示文案映射，避免改后端类名。
   const guardrailNameMap: Record<string, string> = {
-    relevance_guardrail: "Relevance Guardrail",
-    jailbreak_guardrail: "Jailbreak Guardrail",
+    relevance_guardrail: "相关性护栏",
+    jailbreak_guardrail: "越狱检测护栏",
+    "Relevance Guardrail": "相关性护栏",
+    "Jailbreak Guardrail": "越狱检测护栏",
   };
 
   const guardrailDescriptionMap: Record<string, string> = {
-    "Relevance Guardrail": "Ensure messages are relevant to airline support",
-    "Jailbreak Guardrail":
-      "Detect and block attempts to bypass or override system instructions",
+    相关性护栏: "确保消息与京东购物客服相关",
+    越狱检测护栏: "检测并拦截绕过/覆盖系统指令的尝试",
   };
 
   const extractGuardrailName = (rawName: string): string =>
@@ -43,7 +46,7 @@ export function Guardrails({ guardrails, inputGuardrails }: GuardrailsProps) {
 
   return (
     <PanelSection
-      title="Guardrails"
+      title="护栏检查"
       icon={<Shield className="h-4 w-4 text-blue-600" />}
     >
       <div className="grid grid-cols-3 gap-3">
@@ -70,12 +73,12 @@ export function Guardrails({ guardrails, inputGuardrails }: GuardrailsProps) {
                 {!gr.input || gr.passed ? (
                   <Badge className="mt-2 px-2 py-1 bg-emerald-500 hover:bg-emerald-600 flex items-center text-white">
                     <CheckCircle className="h-4 w-4 mr-1 text-white" />
-                    Passed
+                    通过
                   </Badge>
                 ) : (
                   <Badge className="mt-2 px-2 py-1 bg-red-500 hover:bg-red-600 flex items-center text-white">
                     <XCircle className="h-4 w-4 mr-1 text-white" />
-                    Failed
+                    未通过
                   </Badge>
                 )}
               </div>

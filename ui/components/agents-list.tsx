@@ -15,7 +15,7 @@ export function AgentsList({ agents, currentAgent }: AgentsListProps) {
   const activeAgent = agents.find((a) => a.name === currentAgent);
   return (
     <PanelSection
-      title="Available Agents"
+      title="可用客服"
       icon={<Bot className="h-4 w-4 text-blue-600" />}
     >
       <div className="grid grid-cols-3 gap-3">
@@ -44,7 +44,7 @@ export function AgentsList({ agents, currentAgent }: AgentsListProps) {
               </p>
               {agent.name === currentAgent && (
                 <Badge className="mt-2 bg-blue-600 hover:bg-blue-700 text-white">
-                  Active
+                  当前
                 </Badge>
               )}
             </CardContent>

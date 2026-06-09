@@ -8,6 +8,18 @@ interface ConversationContextProps {
   context: Record<string, any>;
 }
 
+// Map backend Pydantic field names → 中文标签。Keys 留作技术接口名，
+// UI 只换显示文案，便于和后端约定一致。
+const CONTEXT_LABEL: Record<string, string> = {
+  user_name: "用户名",
+  user_id: "用户ID",
+  order_id: "订单号",
+  sku: "商品SKU",
+  after_sales_case_id: "售后单号",
+  last_intent: "上一次意图",
+  scenario: "场景",
+};
+
 export function ConversationContext({ context }: ConversationContextProps) {
   const formatValue = (value: any) => {
     if (value === null || value === undefined || value === "") return "null";
@@ -34,7 +46,7 @@ export function ConversationContext({ context }: ConversationContextProps) {
 
   return (
     <PanelSection
-      title="Conversation Context"
+      title="对话上下文"
       icon={<BookText className="h-4 w-4 text-blue-600" />}
     >
       <Card className="bg-gradient-to-r from-white to-gray-50 border-gray-200 shadow-sm">
@@ -51,7 +63,7 @@ export function ConversationContext({ context }: ConversationContextProps) {
                     <>
                       <div className="w-2 h-2 rounded-full bg-blue-500"></div>
                       <div className="text-xs space-y-1">
-                        <div className="text-zinc-500 font-light">{key}:</div>
+                        <div className="text-zinc-500 font-light">{CONTEXT_LABEL[key] ?? key}:</div>
                         <span
                           className={
                             value ? "text-zinc-900 font-light break-words" : "text-gray-400 italic"
