@@ -401,7 +401,16 @@ async def decide_approval(
         return {"ok": False, "error": "not found"}
     if req_preview.status != "pending":
         return {"ok": False, "error": f"already {req_preview.status}"}
-    execution = _execute_approved(req_preview) if target_status == "approved" else None
+    # SDK-native approvals (Runner is awaiting on a waiter) run the real
+    # tool body on resume — don't also mock-execute here, that would
+    # double-print "已发起退款...". The decide() call sets the waiter so
+    # server.respond() unblocks and finishes the run.
+    sdk_native = req_preview.run_state_json is not None
+    execution = (
+        None
+        if sdk_native or target_status == "rejected"
+        else _execute_approved(req_preview)
+    )
     req = approval_store.decide(
         approval_id,
         decision=target_status,  # type: ignore[arg-type]
