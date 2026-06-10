@@ -19,6 +19,7 @@ from agents import (
     MessageOutputItem,
     OutputGuardrailTripwireTriggered,
     Runner,
+    ToolApprovalItem,
     ToolCallItem,
     ToolCallOutputItem,
     SQLiteSession,
@@ -49,6 +50,7 @@ from ecommerce.agents import (
     order_agent,
     triage_agent,
 )
+from ecommerce.approvals import approval_store
 from ecommerce.attachments import InMemoryAttachmentStore
 from ecommerce.summary_agent import CaseSummary, case_summary_agent
 from ecommerce.vision import describe_image
@@ -604,10 +606,256 @@ class EcommerceChatKitServer(ChatKitServer[dict[str, Any]]):
                     "events": [e.model_dump() for e in new_events],
                 },
             )
-        trace_ctx.__exit__(None, None, None)
+        # SDK-native HITL: tools decorated with needs_approval=True pause the
+        # Runner before the call runs. respond() persists the RunState, blocks
+        # on the operator's Approve/Reject in the panel, then resumes a fresh
+        # streamed run with the decision applied. The resume's assistant
+        # message lands as an additional bubble in the same SSE.
+        interruptions = list(getattr(result, "interruptions", None) or [])
+        if interruptions:
+            trace_ctx.__exit__(None, None, None)
+            async for ev in self._handle_interruptions(
+                result, interruptions, thread, context, chat_context, state
+            ):
+                yield ev
+        else:
+            trace_ctx.__exit__(None, None, None)
         # Side-channel: refresh the structured CaseSummary off the critical
         # path; UI receives it via the state stream when ready.
         self._kick_summary(thread)
+
+    async def _handle_interruptions(
+        self,
+        result: Any,
+        interruptions: List[Any],
+        thread: ThreadMetadata,
+        context: dict[str, Any],
+        chat_context: EcommerceAgentChatContext,
+        conv_state: ConversationState,
+    ) -> AsyncIterator[ThreadStreamEvent]:
+        """Block the SSE on operator approval, then resume the paused run.
+
+        Pattern: persist the RunState into ApprovalStore, register an
+        asyncio.Event per pending approval, await with a heartbeat, apply
+        state.approve / state.reject, then run a fresh Runner.run_streamed
+        with the patched state and yield its events into this same SSE.
+        """
+        run_state = result.to_state()
+        state_json = run_state.to_json()
+
+        # Build approval rows for the UI and store the state alongside.
+        waiters: list[tuple[asyncio.Event, str, Any]] = []
+        for item in interruptions:
+            tool_name = getattr(item, "tool_name", None) or "unknown"
+            args = self._extract_approval_args(item)
+            summary = self._compose_approval_summary(tool_name, args)
+            kind = self._approval_kind_for_tool(tool_name)
+            req = approval_store.create(
+                thread_id=thread.id,
+                kind=kind,
+                tool_name=tool_name,
+                args=args,
+                summary=summary,
+            )
+            call_id = (
+                getattr(getattr(item, "raw_item", None), "call_id", None)
+                or getattr(getattr(item, "raw_item", None), "id", None)
+                or req.id
+            )
+            approval_store.attach_run_state(
+                req.id, run_state_json=state_json, approval_call_id=call_id
+            )
+            waiters.append((approval_store.register_waiter(req.id), req.id, item))
+
+        # Push the approvals panel update.
+        await self._broadcast_state(thread, context)
+        yield ClientEffectEvent(
+            name="runner_state_update",
+            data={"thread_id": thread.id, "ts": time.time(), "awaiting_approval": True},
+        )
+
+        # Await each decision with a 5-minute hard cap; in-between, send a
+        # heartbeat every ~20s so intermediaries don't close the SSE.
+        timeout_s = 300.0
+        deadline = asyncio.get_running_loop().time() + timeout_s
+        loop = asyncio.get_running_loop()
+        for event, approval_id, item in waiters:
+            while True:
+                remaining = max(0.0, deadline - loop.time())
+                try:
+                    await asyncio.wait_for(event.wait(), timeout=min(20.0, remaining))
+                    break
+                except asyncio.TimeoutError:
+                    if remaining <= 0:
+                        approval_store.decide(
+                            approval_id, decision="rejected", note="approval timeout"
+                        )
+                        break
+                    yield ClientEffectEvent(
+                        name="runner_state_update",
+                        data={
+                            "thread_id": thread.id,
+                            "ts": time.time(),
+                            "awaiting_approval": True,
+                            "heartbeat": True,
+                        },
+                    )
+            approval_store.clear_waiter(approval_id)
+            decided = approval_store.get(approval_id)
+            if decided and decided.status == "approved":
+                # always_approve=True so the resume doesn't pause again on
+                # the same tool name if the model decides to re-invoke it
+                # in this turn (it often does for self-confirmation).
+                run_state.approve(item, always_approve=True)
+            else:
+                run_state.reject(
+                    item,
+                    always_reject=True,
+                    rejection_message=(decided.operator_note if decided else None),
+                )
+
+        # Resume. The model may re-invoke an approved tool with a new
+        # call_id (always_approve isn't enforced inside the same Runner
+        # turn for fresh call ids), so we loop the streamed run, auto-
+        # approving any further request_refund_tool pauses up to a cap to
+        # avoid runaway loops.
+        resume_trace = agents_trace(
+            workflow_name=f"ecommerce/{conv_state.current_agent_name}/resume",
+            metadata={"thread_id": thread.id},
+        )
+        resume_trace.__enter__()
+        try:
+            next_input: Any = run_state
+            for resume_pass in range(4):  # hard cap on auto-resumes
+                # IMPORTANT: when input is a RunState, do NOT pass context=
+                # again — Runner would wrap chat_context in a *fresh* wrapper
+                # and discard the approval decisions we just stamped onto the
+                # state's existing wrapper. Without context=, SDK reuses the
+                # state's wrapper as-is.
+                resume_result = Runner.run_streamed(
+                    _get_agent_by_name(conv_state.current_agent_name),
+                    next_input,
+                    session=self._session_for_thread(thread.id),
+                )
+                _fake_id_replacement: Optional[str] = None
+                async for ev in stream_agent_response(chat_context, resume_result):
+                    _it = getattr(ev, "item", None)
+                    if _it is not None and getattr(_it, "id", None) == "__fake_id__":
+                        if (
+                            type(ev).__name__ == "ThreadItemAddedEvent"
+                            or _fake_id_replacement is None
+                        ):
+                            _fake_id_replacement = self.store.generate_item_id(
+                                "message", thread, context
+                            )
+                        try:
+                            _it.id = _fake_id_replacement
+                        except Exception:
+                            pass
+                    if isinstance(ev, ProgressUpdateEvent) or getattr(ev, "type", "") == "progress_update_event":
+                        continue
+                    yield ev
+
+                resume_events, resume_active = self._record_events(
+                    resume_result.new_items, conv_state.current_agent_name, thread.id
+                )
+                conv_state.events.extend(resume_events)
+                conv_state.current_agent_name = resume_active
+                try:
+                    conv_state.current_agent_name = resume_result.last_agent.name
+                except Exception:
+                    pass
+                await self._broadcast_state(thread, context)
+                yield ClientEffectEvent(
+                    name="runner_state_update",
+                    data={"thread_id": thread.id, "ts": time.time()},
+                )
+                if resume_events:
+                    yield ClientEffectEvent(
+                        name="runner_event_delta",
+                        data={
+                            "thread_id": thread.id,
+                            "ts": time.time(),
+                            "events": [e.model_dump() for e in resume_events],
+                        },
+                    )
+
+                # stream_agent_response only emits a finalized
+                # AssistantMessageItem when the run completes normally; when
+                # it stops on an interruption the assistant text sitting in
+                # new_items never reaches ChatKit. Surface the last
+                # MessageOutputItem of this pass manually so the chat keeps
+                # making forward progress.
+                last_text = ""
+                for item in reversed(resume_result.new_items):
+                    if isinstance(item, MessageOutputItem):
+                        last_text = ItemHelpers.text_message_output(item) or ""
+                        if last_text.strip():
+                            break
+                if last_text.strip():
+                    yield ThreadItemDoneEvent(
+                        item=AssistantMessageItem(
+                            id=self.store.generate_item_id("message", thread, context),
+                            thread_id=thread.id,
+                            created_at=datetime.now(),
+                            content=[AssistantMessageContent(text=last_text)],
+                        )
+                    )
+                    await self._session_for_thread(thread.id).add_items(
+                        [{"role": "assistant", "content": last_text}]
+                    )
+
+                follow_up = list(getattr(resume_result, "interruptions", None) or [])
+                if not follow_up:
+                    break
+                # Auto-approve subsequent same-turn pauses (the operator
+                # already said "yes" once for this conversation). Each pass
+                # builds a fresh RunState from the latest result.
+                next_state = resume_result.to_state()
+                for it in follow_up:
+                    next_state.approve(it, always_approve=True)
+                next_input = next_state
+        finally:
+            resume_trace.__exit__(None, None, None)
+
+    @staticmethod
+    def _extract_approval_args(item: Any) -> dict[str, Any]:
+        """Best-effort decode of the tool args sitting inside ToolApprovalItem.
+
+        OpenAI chat-completions tool calls carry a JSON string in
+        raw_item.arguments; Responses-API native carries a dict. Fall back
+        to a flat repr if neither shape matches."""
+        raw = getattr(item, "raw_item", None)
+        args = getattr(raw, "arguments", None)
+        if isinstance(args, str):
+            try:
+                return json.loads(args)
+            except Exception:
+                return {"raw": args}
+        if isinstance(args, dict):
+            return args
+        return {"raw": repr(raw)}
+
+    @staticmethod
+    def _compose_approval_summary(tool_name: str, args: dict[str, Any]) -> str:
+        """One-line Chinese summary for the operator panel."""
+        if tool_name == "request_refund_tool":
+            return (
+                f"订单 {args.get('order_id', '?')} 退款申请，"
+                f"金额 {args.get('amount') or '原支付金额'}，"
+                f"原因：{args.get('reason', '?')}"
+            )
+        return f"{tool_name} {args}"
+
+    @staticmethod
+    def _approval_kind_for_tool(tool_name: str) -> str:
+        if tool_name == "request_refund_tool":
+            return "refund"
+        if tool_name == "request_order_cancel_tool":
+            return "order_cancel"
+        if tool_name == "request_price_protection_tool":
+            return "price_protection"
+        return "refund"
 
     async def action(
         self,
