@@ -231,22 +231,26 @@ def _thread_id_from_ctx(context: RunContextWrapper[EcommerceAgentChatContext]) -
     return tid or "thr_unknown"
 
 
-@function_tool(needs_approval=True)
+@function_tool
 async def request_refund_tool(
     context: RunContextWrapper[EcommerceAgentChatContext],
     order_id: str,
     reason: str,
     amount: str | None = None,
 ) -> str:
-    """退款工具。SDK 原生 HITL：Runner 在调用本工具前自动暂停，
-    server.respond 把待审批项写入 ApprovalStore 并 await 运营决策。
-    操作员点 Approve 后才会到达这个函数体，此时执行真实的（mock）退款。
-    """
+    """发起退款审批申请（不直接执行退款，需人工审批）。"""
     context.context.state.last_intent = "退款"
     context.context.state.order_id = order_id
+    req = approval_store.create(
+        thread_id=_thread_id_from_ctx(context),
+        kind="refund",
+        tool_name="request_refund_tool",
+        args={"order_id": order_id, "reason": reason, "amount": amount or ""},
+        summary=f"订单 {order_id} 退款申请，金额 {amount or '原支付金额'}，原因：{reason}",
+    )
     return (
-        f"已为订单 {order_id} 发起退款，原因：{reason}。"
-        f"金额：{amount or '原支付金额'}。预计 3-7 个工作日原路退回。"
+        f"已提交退款审批申请（编号 {req.id}）。订单 {order_id}，原因：{reason}。"
+        f"等待人工审批，审批通过后会按原路退回。"
     )
 
 
