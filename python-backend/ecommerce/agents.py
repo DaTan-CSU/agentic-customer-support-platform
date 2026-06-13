@@ -5,6 +5,7 @@ from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 
 from .context import EcommerceAgentChatContext
 from .guardrails import jailbreak_guardrail, relevance_guardrail
+from .hooks import audit_hooks
 from .output_guardrails import OUTPUT_GUARDRAILS
 from .tools import (
     query_after_sales_tool,
@@ -16,7 +17,7 @@ from .tools import (
     search_policy,
 )
 
-MODEL = "gpt-5.5"
+MODEL = "gpt-5.4-mini"
 
 # Every front-facing agent runs the same input guardrails. Because the active
 # agent persists across turns (the user's next message goes straight to the
@@ -55,6 +56,7 @@ triage_agent = Agent[EcommerceAgentChatContext](
     handoffs=[],
     input_guardrails=_INPUT_GUARDRAILS,
     output_guardrails=OUTPUT_GUARDRAILS,
+    hooks=audit_hooks,
 )
 
 
@@ -97,6 +99,7 @@ def logistics_instructions(
         "你是京东物流查询客服。你负责配送进度、承运方、运单号、预计送达和延迟说明。\n"
         f"当前上下文订单号：{order_id}。\n"
         "用户提供订单号时，立即调用 query_logistics_tool。上下文已有订单号且用户继续追问物流时，直接使用该订单号。"
+        "**如果用户问的是物流政策、配送规则、运费、自提点等通用规则**（不针对某个订单），先调用 search_policy 检索，再据此作答。"
         "如果用户询问订单商品或金额，请最多 handoff 一次给订单查询客服；其他主题交回分诊客服。"
         "工具调用完成后，用简洁中文回答。每条消息最多发起一次 handoff。"
     )
@@ -107,8 +110,9 @@ logistics_agent = Agent[EcommerceAgentChatContext](
     model=MODEL,
     handoff_description="查询京东订单物流轨迹、承运方、运单号和预计送达。",
     instructions=logistics_instructions,
-    tools=[query_logistics_tool],
+    tools=[query_logistics_tool, search_policy],
     input_guardrails=_INPUT_GUARDRAILS,
+    hooks=audit_hooks,
     # 见 order_agent 同样的说明。
 )
 
@@ -124,10 +128,16 @@ def after_sales_instructions(
         "你是京东售后客服，处理退货、换货、退款、价保、维修和售后进度查询。\n"
         f"当前上下文订单号：{order_id}；当前售后单：{case_id}。\n"
         "用户提供订单号时，立即调用 query_after_sales_tool。上下文已有订单号且用户继续追问售后时，直接使用该订单号。"
-        "如果用户明确要求退款，调用 request_refund_tool 提交人工审批申请。"
-        "如果用户主张价保（看到降价想要退差价），调用 request_price_protection_tool 提交人工审批申请。"
+        "如果用户明确要求退款且**金额 ≤ 5000 元**（包括未指明金额时按原支付金额处理），"
+        "调用 request_refund_tool 提交人工审批申请。"
+        "**如果退款金额 > 5000 元**：不要调用 request_refund_tool，直接告诉用户「金额较大，"
+        "已为您记录为人工工单，24 小时内会有客服回访」——这样可以避免无意义的审批往返。\n"
+        "如果用户主张价保（看到降价想要退差价）且**差价 ≤ 5000 元**，调用 request_price_protection_tool 提交申请；"
+        "差价 > 5000 元同样走人工工单路径，不调用工具。\n"
         "**不要直接承诺退款已完成**，应说明已提交申请等待人工审批。"
-        "如果用户询问政策规则或资格口径，请最多 handoff 一次给 FAQ 客服；其他主题交回分诊客服。"
+        "**如果用户问的是售后政策口径**（如 7 天无理由范围、价保资格、维修时效、退款时间等通用规则），"
+        "先调用 search_policy 检索，再据此作答；不要 handoff。"
+        "如果用户改问其它常见问题或商品知识，请最多 handoff 一次给 FAQ 客服；其他主题交回分诊客服。"
         "工具调用完成后，用简洁中文回答。每条消息最多发起一次 handoff。"
     )
 
@@ -141,8 +151,10 @@ after_sales_agent = Agent[EcommerceAgentChatContext](
         query_after_sales_tool,
         request_refund_tool,
         request_price_protection_tool,
+        search_policy,
     ],
     input_guardrails=_INPUT_GUARDRAILS,
+    hooks=audit_hooks,
     # 见 order_agent 同样的说明。
 )
 
@@ -163,6 +175,7 @@ faq_agent = Agent[EcommerceAgentChatContext](
     tools=[search_policy],
     input_guardrails=_INPUT_GUARDRAILS,
     output_guardrails=OUTPUT_GUARDRAILS,
+    hooks=audit_hooks,
 )
 
 
@@ -190,6 +203,8 @@ order_agent.handoffs = [_ho(logistics_agent), _ho(triage_agent)]
 logistics_agent.handoffs = [_ho(order_agent), _ho(triage_agent)]
 after_sales_agent.handoffs = [_ho(faq_agent), _ho(triage_agent)]
 faq_agent.handoffs = [_ho(triage_agent)]
+
+
 
 # -- agents-as-tools (Phase 1 of step 6) -----------------------------------
 # Wrap each specialist as a Tool so triage can call them in one turn for

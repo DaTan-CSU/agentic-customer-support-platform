@@ -1,0 +1,302 @@
+{
+  "summary": {
+    "n_functional": 25,
+    "n_reject": 5,
+    "recall_at_1": 0.8,
+    "recall_at_3": 0.92,
+    "mrr": 0.84,
+    "reject_accuracy": 0.8
+  },
+  "results": [
+    {
+      "id": "P01",
+      "category": "policy",
+      "query": "7天无理由退货有哪些限制",
+      "expected_reject": false,
+      "rank_in_top3": 1,
+      "top1_title": "7天无理由退货规则说明（第三方商家）",
+      "top1_sim": 0.823739230632782,
+      "top1_source": "jd_issue_detail"
+    },
+    {
+      "id": "P02",
+      "category": "policy",
+      "query": "自提点能保留货物多少天",
+      "expected_reject": false,
+      "rank_in_top3": 1,
+      "top1_title": "自提点/自提柜可以保留货物几天？",
+      "top1_sim": 0.8952842354774475,
+      "top1_source": "jd_issue_detail"
+    },
+    {
+      "id": "P03",
+      "category": "policy",
+      "query": "京东自营商品的运费怎么计算",
+      "expected_reject": false,
+      "rank_in_top3": 1,
+      "top1_title": "京东自营售后运费说明",
+      "top1_sim": 0.7594106197357178,
+      "top1_source": "jd_issue_detail"
+    },
+    {
+      "id": "P04",
+      "category": "policy",
+      "query": "怎么申请退货退款",
+      "expected_reject": false,
+      "rank_in_top3": 1,
+      "top1_title": "如何申请退货/换货？",
+      "top1_sim": 0.7546376585960388,
+      "top1_source": "jd_issue_detail"
+    },
+    {
+      "id": "P05",
+      "category": "policy",
+      "query": "退款一般几天到账",
+      "expected_reject": false,
+      "rank_in_top3": 1,
+      "top1_title": "退款多久可以到账？",
+      "top1_sim": 0.7034569382667542,
+      "top1_source": "jd_issue_detail"
+    },
+    {
+      "id": "P06",
+      "category": "policy",
+      "query": "优惠券能叠加使用吗",
+      "expected_reject": false,
+      "rank_in_top3": 3,
+      "top1_title": "【PLUS权益升级】可以切换几次“专享立减”权益？",
+      "top1_sim": 0.5953816175460815,
+      "top1_source": "jd_plus_scrape"
+    },
+    {
+      "id": "P07",
+      "category": "policy",
+      "query": "价格保护怎么申请",
+      "expected_reject": false,
+      "rank_in_top3": 1,
+      "top1_title": "如何申请商家商品“破损包退换”服务？",
+      "top1_sim": 0.5846825242042542,
+      "top1_source": "jd_issue_detail"
+    },
+    {
+      "id": "P08",
+      "category": "policy",
+      "query": "客服电话是多少",
+      "expected_reject": false,
+      "rank_in_top3": null,
+      "top1_title": "退货/换货地址是哪里？",
+      "top1_sim": 0.41539934277534485,
+      "top1_source": "jd_issue_detail"
+    },
+    {
+      "id": "P09",
+      "category": "policy",
+      "query": "账户密码忘了怎么找回",
+      "expected_reject": false,
+      "rank_in_top3": null,
+      "top1_title": "return_exchange",
+      "top1_sim": 0.3996272683143616,
+      "top1_source": "jd_policy_index"
+    },
+    {
+      "id": "P10",
+      "category": "policy",
+      "query": "货到付款怎么使用",
+      "expected_reject": false,
+      "rank_in_top3": 3,
+      "top1_title": "退换货，运费是否可以使用到付",
+      "top1_sim": 0.6374173164367676,
+      "top1_source": "jd_issue_detail"
+    },
+    {
+      "id": "PL1",
+      "category": "plus",
+      "query": "什么是京东PLUS会员",
+      "expected_reject": false,
+      "rank_in_top3": 1,
+      "top1_title": "什么是京东PLUS会员？",
+      "top1_sim": 0.9242749214172363,
+      "top1_source": "jd_plus_scrape"
+    },
+    {
+      "id": "PL2",
+      "category": "plus",
+      "query": "京东PLUS会员一年多少钱",
+      "expected_reject": false,
+      "rank_in_top3": 1,
+      "top1_title": "京东PLUS会员价格是多少？年费多少钱？",
+      "top1_sim": 0.8557195067405701,
+      "top1_source": "jd_plus_scrape"
+    },
+    {
+      "id": "PL3",
+      "category": "plus",
+      "query": "PLUS会员有哪些权益",
+      "expected_reject": false,
+      "rank_in_top3": 1,
+      "top1_title": "京东PLUS会员有哪些权益？",
+      "top1_sim": 0.7805685997009277,
+      "top1_source": "jd_plus_scrape"
+    },
+    {
+      "id": "PL4",
+      "category": "plus",
+      "query": "怎么开通京东PLUS会员",
+      "expected_reject": false,
+      "rank_in_top3": 1,
+      "top1_title": "京东PLUS会员如何开通？开通方式是什么？",
+      "top1_sim": 0.8867279291152954,
+      "top1_source": "jd_plus_scrape"
+    },
+    {
+      "id": "PL5",
+      "category": "plus",
+      "query": "PLUS会员退卡退款规则",
+      "expected_reject": false,
+      "rank_in_top3": 1,
+      "top1_title": "京东PLUS会员退款规则是什么？开通后可以退费吗？",
+      "top1_sim": 0.7957077026367188,
+      "top1_source": "jd_plus_scrape"
+    },
+    {
+      "id": "L01",
+      "category": "logistics",
+      "query": "次日达服务范围",
+      "expected_reject": false,
+      "rank_in_top3": 1,
+      "top1_title": "次日达服务说明",
+      "top1_sim": 0.783751904964447,
+      "top1_source": "jd_issue_detail"
+    },
+    {
+      "id": "L02",
+      "category": "logistics",
+      "query": "自提订单需要交运费吗",
+      "expected_reject": false,
+      "rank_in_top3": 1,
+      "top1_title": "自提订单是否收费（自提订单运费）？",
+      "top1_sim": 0.8292477130889893,
+      "top1_source": "jd_issue_detail"
+    },
+    {
+      "id": "L03",
+      "category": "logistics",
+      "query": "京东物流多久送达",
+      "expected_reject": false,
+      "rank_in_top3": 1,
+      "top1_title": "我的包裹几天可以收到？",
+      "top1_sim": 0.6777601838111877,
+      "top1_source": "jd_issue_detail"
+    },
+    {
+      "id": "L04",
+      "category": "logistics",
+      "query": "电池能不能寄顺丰快递",
+      "expected_reject": false,
+      "rank_in_top3": 3,
+      "top1_title": "关于京东自营商品售后服务运费说明修订公开意见征集",
+      "top1_sim": 0.48599523305892944,
+      "top1_source": "jd_issue_detail"
+    },
+    {
+      "id": "L05",
+      "category": "logistics",
+      "query": "夜间配送有没有额外运费",
+      "expected_reject": false,
+      "rank_in_top3": 1,
+      "top1_title": "夜间配有没有运费？运费是多少？",
+      "top1_sim": 0.8490206003189087,
+      "top1_source": "jd_issue_detail"
+    },
+    {
+      "id": "K01",
+      "category": "product",
+      "query": "iPhone屏幕碎了怎么维修",
+      "expected_reject": false,
+      "rank_in_top3": 1,
+      "top1_title": "储存类商品（手机、PC等）在返回京东保修检测的时候，设备中的数据怎么办？",
+      "top1_sim": 0.4893440902233124,
+      "top1_source": "jd_issue_detail"
+    },
+    {
+      "id": "K02",
+      "category": "product",
+      "query": "笔记本电脑三包政策",
+      "expected_reject": false,
+      "rank_in_top3": 1,
+      "top1_title": "电脑类商品售后服务细则（自营）",
+      "top1_sim": 0.6072512865066528,
+      "top1_source": "jd_issue_detail"
+    },
+    {
+      "id": "K03",
+      "category": "product",
+      "query": "茅台酒怎么辨别真假",
+      "expected_reject": false,
+      "rank_in_top3": 1,
+      "top1_title": "85年茅台的鉴别方法有哪些？",
+      "top1_sim": 0.6818103194236755,
+      "top1_source": "chinese_ecom_qa"
+    },
+    {
+      "id": "K04",
+      "category": "product",
+      "query": "苹果手机原装充电器多少瓦",
+      "expected_reject": false,
+      "rank_in_top3": 1,
+      "top1_title": "金立原装充电器",
+      "top1_sim": 0.5807524919509888,
+      "top1_source": "chinese_ecom_qa"
+    },
+    {
+      "id": "K05",
+      "category": "product",
+      "query": "海尔冰箱保修期多久",
+      "expected_reject": false,
+      "rank_in_top3": 1,
+      "top1_title": "家用电器类商品售后服务细则（自营）",
+      "top1_sim": 0.5776695609092712,
+      "top1_source": "jd_issue_detail"
+    },
+    {
+      "id": "R01",
+      "category": "reject",
+      "query": "今天股市怎么样",
+      "expected_reject": true,
+      "top1_sim": 0.3239593207836151,
+      "rejected_correctly": true
+    },
+    {
+      "id": "R02",
+      "category": "reject",
+      "query": "帮我写一首七言绝句",
+      "expected_reject": true,
+      "top1_sim": 0.31765270233154297,
+      "rejected_correctly": true
+    },
+    {
+      "id": "R03",
+      "category": "reject",
+      "query": "推荐一部最近的科幻电影",
+      "expected_reject": true,
+      "top1_sim": 0.29217058420181274,
+      "rejected_correctly": true
+    },
+    {
+      "id": "R04",
+      "category": "reject",
+      "query": "明天北京天气怎么样",
+      "expected_reject": true,
+      "top1_sim": 0.3585916757583618,
+      "rejected_correctly": true
+    },
+    {
+      "id": "R05",
+      "category": "reject",
+      "query": "我家猫一直打喷嚏怎么办",
+      "expected_reject": true,
+      "top1_sim": 0.46006888151168823,
+      "rejected_correctly": false
+    }
+  ]
+}

@@ -14,6 +14,15 @@ class EcommerceAgentContext(BaseModel):
     after_sales_case_id: str | None = None
     last_intent: str | None = None
     scenario: str | None = None
+    # Handoff state. "ai" → normal AI flow; "escalated" → we've opened a CRM
+    # ticket and the AI is muted (subsequent user turns get a fixed ack while
+    # a human downstream picks up). This is intentionally a one-shot terminal
+    # state — the demo's job ends at the API boundary, not at simulating a
+    # real human chat surface.
+    human_mode: str = "ai"
+    ticket_id: str | None = None
+    escalation_reason: str | None = None
+    escalated_at: float | None = None
 
 
 class EcommerceAgentChatContext(AgentContext[dict]):

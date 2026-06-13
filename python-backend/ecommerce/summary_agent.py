@@ -14,9 +14,13 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from agents import Agent
+from agents import Agent, ModelSettings
 
-SUMMARY_MODEL = "gpt-5.5"
+SUMMARY_MODEL = "gpt-5.4-mini"
+# Low temperature: forces stable JSON output. With default temperature the
+# model occasionally drifts on enum-typed fields (intent / sentiment) and
+# trips ModelBehaviorError when the proxy doesn't enforce the JSON schema.
+_SUMMARY_SETTINGS = ModelSettings(temperature=0.1)
 
 # Intent / sentiment kept as `str` rather than `Literal[...]` because the
 # 猫猫小铺 proxy does not strictly enforce JSON-schema enum constraints — the
@@ -44,6 +48,7 @@ class CaseSummary(BaseModel):
 case_summary_agent = Agent(
     name="Case Summary",
     model=SUMMARY_MODEL,
+    model_settings=_SUMMARY_SETTINGS,
     instructions=(
         "你是京东客服会话摘要助手。根据给定的客服对话历史，输出结构化 JSON。\n"
         "严格只输出 JSON，不要任何额外解释或代码块标记。\n"

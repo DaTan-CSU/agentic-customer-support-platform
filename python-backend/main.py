@@ -59,7 +59,7 @@ def _load_proxy_from_key_file(provider: str = "词元神") -> tuple[str, str] | 
     return None
 
 
-_proxy = _load_proxy_from_key_file("AI巴士")
+_proxy = _load_proxy_from_key_file("词元神")
 
 
 def _load_tencent_creds_from_key_file() -> tuple[str, str] | None:
@@ -145,6 +145,7 @@ from ecommerce.agents import (
     triage_agent,
 )
 from ecommerce.approvals import approval_store
+from ecommerce.crm import mock_crm
 from ecommerce.stt import transcribe as stt_transcribe
 from ecommerce.context import (
     EcommerceAgentChatContext,
@@ -291,7 +292,17 @@ async def chatkit_state(
 async def chatkit_bootstrap(
     server: EcommerceChatKitServer = Depends(get_server),
 ) -> Dict[str, Any]:
-    return await server.snapshot(None, {"request": None})
+    # On page refresh, default to resuming the most recently created thread
+    # rather than spinning up a fresh one. Without this, the in-memory
+    # ConversationState (human_mode, current_agent_name, summary) for the
+    # active conversation gets orphaned and the UI silently drops back to
+    # triage. The user can still start a fresh conversation via ChatKit's
+    # "new conversation" button — which calls /chatkit and gets a new id.
+    page = await server.store.load_threads(
+        limit=1, after=None, order="desc", context={"request": None}
+    )
+    most_recent = page.data[0].id if page.data else None
+    return await server.snapshot(most_recent, {"request": None})
 
 
 @app.get("/chatkit/state/stream")
@@ -440,6 +451,63 @@ async def stt_endpoint(audio: UploadFile = File(...)) -> Dict[str, Any]:
 @app.get("/health")
 async def health_check() -> Dict[str, str]:
     return {"status": "healthy"}
+
+
+# -- Handoff boundary --------------------------------------------------------
+# `GET /tickets` lets the Agent View list tickets opened by the smart-CS layer.
+# `POST /webhook/handoff` is the OUTBOUND contract a real deployment would
+# point at — Zendesk, Salesforce, an internal helpdesk Webhook. The demo
+# accepts the payload and records it locally so reviewers can see the shape.
+@app.get("/tickets")
+async def list_tickets(thread_id: str | None = Query(None)) -> Dict[str, Any]:
+    tickets = mock_crm.list_for_thread(thread_id) if thread_id else mock_crm.list_all()
+    return {
+        "tickets": [
+            {
+                "id": t.id,
+                "thread_id": t.thread_id,
+                "trigger": t.trigger,
+                "user_id": t.user_id,
+                "summary": t.summary,
+                "assigned_to": t.assigned_to,
+                "eta_hours": t.eta_hours,
+                "created_at": t.created_at,
+                "snapshot": t.snapshot,
+            }
+            for t in tickets
+        ]
+    }
+
+
+class HandoffPayload(BaseModel):
+    session_id: str
+    trigger: str
+    user_id: str | None = None
+    summary: str
+    transcript_url: str | None = None
+
+
+@app.post("/webhook/handoff")
+async def handoff_webhook(payload: HandoffPayload) -> Dict[str, Any]:
+    """Documented contract for external CRM integration.
+
+    In production, the smart-CS layer would POST this payload to your own
+    CRM endpoint instead. The demo accepts a self-call so the API shape is
+    visible / testable end-to-end.
+    """
+    ticket = mock_crm.open_ticket(
+        thread_id=payload.session_id,
+        trigger=payload.trigger,
+        user_id=payload.user_id,
+        summary=payload.summary,
+        snapshot={"transcript_url": payload.transcript_url} if payload.transcript_url else {},
+    )
+    print(
+        f"[/webhook/handoff] ticket={ticket.id} thread={payload.session_id} "
+        f"trigger={payload.trigger}",
+        flush=True,
+    )
+    return {"ticket_id": ticket.id, "status": "queued"}
 
 
 __all__ = [

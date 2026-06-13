@@ -24,7 +24,7 @@ from agents import (
     ToolCallOutputItem,
     SQLiteSession,
 )
-from agents.exceptions import MaxTurnsExceeded
+from agents.exceptions import MaxTurnsExceeded, ModelBehaviorError
 from agents.tracing import trace as agents_trace
 from chatkit.agents import stream_agent_response
 from chatkit.server import ChatKitServer
@@ -51,6 +51,7 @@ from ecommerce.agents import (
     triage_agent,
 )
 from ecommerce.approvals import approval_store
+from ecommerce.crm import mock_crm
 from ecommerce.attachments import InMemoryAttachmentStore
 from ecommerce.summary_agent import CaseSummary, case_summary_agent
 from ecommerce.vision import describe_image
@@ -85,6 +86,77 @@ def _get_agent_by_name(name: str):
         after_sales_agent.name: after_sales_agent,
     }
     return agents.get(name, triage_agent)
+
+
+# Keyword triggers for AI→human handoff. Kept deliberately short to avoid
+# spurious matches (e.g. "人工" inside "人工智能"); the keyword set covers
+# the common explicit asks and severe complaints. The summary_agent emotion
+# field is checked separately as a soft trigger.
+_HUMAN_TRIGGER_KEYWORDS = (
+    "转人工",
+    "找人工",
+    "人工客服",
+    "我要人工",
+    "投诉",
+    "重复扣费",
+    "重复扣款",
+    "起诉",
+    "工商",
+    "市监",
+)
+
+
+def _classify_runner_error(exc: Exception) -> str:
+    """Map upstream / SDK exceptions to a Chinese, user-facing reply.
+
+    Order matters: we check most-specific classes first. `openai.*` errors are
+    imported lazily so a missing openai package doesn't break the module load.
+    """
+    # SDK invariant — model produced output the framework can't parse (e.g.
+    # JSON schema mismatch for structured outputs, malformed tool_call).
+    if isinstance(exc, ModelBehaviorError):
+        return "模型返回的格式不符合预期，请重试一次或换个问法。"
+    try:
+        from openai import (
+            APIConnectionError,
+            APIStatusError,
+            APITimeoutError,
+            AuthenticationError,
+            BadRequestError,
+            InternalServerError,
+            RateLimitError,
+        )
+
+        if isinstance(exc, RateLimitError):
+            return "调用频率过高，请稍后再试。"
+        if isinstance(exc, AuthenticationError):
+            return "服务认证失败，请联系管理员检查配置。"
+        if isinstance(exc, BadRequestError):
+            return "请求被网关拒绝（可能是参数或内容不合规），请换种问法重试。"
+        if isinstance(exc, APITimeoutError):
+            return "请求超时了，请稍后重试。"
+        if isinstance(exc, APIConnectionError):
+            return "与模型服务的网络连接异常，请稍后重试。"
+        if isinstance(exc, InternalServerError):
+            return "模型服务暂时不可用（5xx），请稍后再试。"
+        if isinstance(exc, APIStatusError):
+            return "上游服务返回异常，请稍后再试。"
+    except ImportError:
+        pass
+    # Fallback — never expose raw exception strings to users.
+    return "系统出了点小状况，请稍后重试。如果反复出现，请联系人工客服。"
+
+
+def _should_handoff_to_human(user_text: str, sentiment: str | None) -> bool:
+    if not user_text:
+        return False
+    text = user_text.strip()
+    if any(kw in text for kw in _HUMAN_TRIGGER_KEYWORDS):
+        return True
+    # Soft trigger: a flagged sentiment from the previous turn's summary.
+    if sentiment and sentiment.strip() == "投诉":
+        return True
+    return False
 
 
 def _get_guardrail_name(g) -> str:
@@ -413,6 +485,69 @@ class EcommerceChatKitServer(ChatKitServer[dict[str, Any]]):
                 combined = f"{user_text}\n\n{image_note}" if user_text else image_note
             run_input = [{"content": combined, "role": "user"}]
 
+        # AI → human escalation. Triggered by an explicit keyword or by
+        # sentiment carried over from the previous summary. On trigger we open
+        # a CRM ticket exactly once and emit a fixed acknowledgement, then
+        # short-circuit THIS turn. The AI is **not muted** afterwards — it
+        # keeps answering regular questions on later turns; the ticket badge
+        # in the UI signals "we have a human follow-up open" out of band.
+        sentiment = state.summary.sentiment if state.summary else None
+        triggered_now = _should_handoff_to_human(user_text, sentiment)
+        if triggered_now:
+            if state.context.human_mode == "ai":
+                trigger = (
+                    "user_keyword"
+                    if any(k in (user_text or "") for k in _HUMAN_TRIGGER_KEYWORDS)
+                    else "sentiment_escalation"
+                )
+                summary_text = (
+                    state.summary.action_taken
+                    if state.summary and state.summary.action_taken
+                    else (user_text[:80] if user_text else "用户主动请求人工客服")
+                )
+                ticket = mock_crm.open_ticket(
+                    thread_id=thread.id,
+                    trigger=trigger,
+                    user_id=state.context.user_id,
+                    summary=summary_text,
+                    snapshot=public_context(state.context),
+                )
+                state.context.human_mode = "escalated"
+                state.context.ticket_id = ticket.id
+                state.context.escalation_reason = trigger
+                state.context.escalated_at = ticket.created_at
+                print(
+                    f"[HANDOFF] thread={thread.id} trigger={trigger} "
+                    f"ticket={ticket.id} -> mock_crm",
+                    flush=True,
+                )
+                ack = (
+                    f"您的问题我已为您升级至人工客服，工单号 {ticket.id}，"
+                    f"已分配给{ticket.assigned_to}，预计 {ticket.eta_hours} 小时内"
+                    f"通过站内信回复。在此期间我仍可继续帮您查订单/物流/政策等常规问题。"
+                )
+            else:
+                # Already escalated and the user is asking for human again —
+                # repeat the existing ticket info instead of opening a new one.
+                ack = (
+                    f"您的工单 {state.context.ticket_id} 仍在排队中，"
+                    f"人工同事会通过站内信回复您。其它常规问题我可以继续帮您。"
+                )
+            if run_input:
+                await self._session_for_thread(thread.id).add_items(
+                    [*run_input, {"role": "assistant", "content": ack}]
+                )
+            await self._broadcast_state(thread, context)
+            yield ThreadItemDoneEvent(
+                item=AssistantMessageItem(
+                    id=self.store.generate_item_id("message", thread, context),
+                    thread_id=thread.id,
+                    created_at=datetime.now(),
+                    content=[AssistantMessageContent(text=ack)],
+                )
+            )
+            return
+
         previous_context = public_context(state.context)
         chat_context = EcommerceAgentChatContext(
             thread=thread,
@@ -560,6 +695,28 @@ class EcommerceChatKitServer(ChatKitServer[dict[str, Any]]):
                     thread_id=thread.id,
                     created_at=datetime.now(),
                     content=[AssistantMessageContent(text=safe_reply)],
+                )
+            )
+            trace_ctx.__exit__(None, None, None)
+            return
+        except Exception as exc:
+            # P0-4: classify upstream / SDK errors into user-readable Chinese
+            # messages instead of bubbling 500s. We log the full type+message to
+            # the uvicorn console so on-call can still diagnose.
+            err_class = type(exc).__name__
+            err_module = type(exc).__module__
+            err_str = str(exc) or "(no message)"
+            print(f"[runner-error] {err_module}.{err_class}: {err_str}", flush=True)
+            user_msg = _classify_runner_error(exc)
+            await self._session_for_thread(thread.id).add_items(
+                [*run_input, {"role": "assistant", "content": user_msg}]
+            )
+            yield ThreadItemDoneEvent(
+                item=AssistantMessageItem(
+                    id=self.store.generate_item_id("message", thread, context),
+                    thread_id=thread.id,
+                    created_at=datetime.now(),
+                    content=[AssistantMessageContent(text=user_msg)],
                 )
             )
             trace_ctx.__exit__(None, None, None)

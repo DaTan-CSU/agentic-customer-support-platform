@@ -1,6 +1,6 @@
 {
   "model": "text-embedding-v4",
   "dim": 1024,
-  "count": 2050,
-  "built_at": "2026-06-02 19:26:57"
+  "count": 2068,
+  "built_at": "2026-06-11 22:47:13"
 }

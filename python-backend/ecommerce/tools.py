@@ -6,11 +6,20 @@ from pathlib import Path
 from typing import Any
 
 from agents import RunContextWrapper, function_tool
+from agents.tool_guardrails import (
+    ToolGuardrailFunctionOutput,
+    ToolInputGuardrailData,
+    tool_input_guardrail,
+)
 
 from .approvals import approval_store
 from .context import EcommerceAgentChatContext
 from .mock_store import query_after_sales, query_logistics, query_order
 from .widgets import logistics_card, order_card
+
+# Tool-level policy cap. Above this the refund/价保 tool must NOT be auto-
+# accepted by the model — it has to go through the human ticket channel.
+_REFUND_AUTO_CAP_YUAN = 5000
 
 _KNOWLEDGE_DIR = Path(__file__).parent / "knowledge"
 _KNOWLEDGE_PATH = _KNOWLEDGE_DIR / "knowledge_base.jsonl"
@@ -231,7 +240,51 @@ def _thread_id_from_ctx(context: RunContextWrapper[EcommerceAgentChatContext]) -
     return tid or "thr_unknown"
 
 
-@function_tool(needs_approval=True)
+_AMOUNT_RE = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def _parse_amount_yuan(raw: Any) -> float | None:
+    """Best-effort numeric extraction from the model's freeform amount field.
+
+    The model may pass '500', '500元', '500.5', '￥500', or just '原支付金额'.
+    Returns None when no number can be extracted (no cap applies).
+    """
+    if raw is None:
+        return None
+    s = str(raw)
+    m = _AMOUNT_RE.search(s)
+    if not m:
+        return None
+    try:
+        return float(m.group(0))
+    except ValueError:
+        return None
+
+
+@tool_input_guardrail
+async def _refund_amount_cap(data: ToolInputGuardrailData) -> ToolGuardrailFunctionOutput:
+    """Reject refund/价保 calls above the auto-cap (forces human ticket route)."""
+    try:
+        args = json.loads(data.context.tool_arguments or "{}")
+    except json.JSONDecodeError:
+        # Malformed args — let the SDK's own arg-validation surface the error.
+        return ToolGuardrailFunctionOutput.allow()
+    amount = _parse_amount_yuan(
+        args.get("amount") or args.get("claimed_amount")
+    )
+    if amount is not None and amount > _REFUND_AUTO_CAP_YUAN:
+        return ToolGuardrailFunctionOutput.reject_content(
+            message=(
+                f"该金额（{amount:.0f} 元）超出自动审批上限 "
+                f"{_REFUND_AUTO_CAP_YUAN} 元，必须走人工工单。请告知用户："
+                "已记录此次诉求，将由人工客服在 24 小时内回访。"
+            ),
+            output_info={"requested_amount": amount, "cap": _REFUND_AUTO_CAP_YUAN},
+        )
+    return ToolGuardrailFunctionOutput.allow(output_info={"requested_amount": amount})
+
+
+@function_tool(needs_approval=True, tool_input_guardrails=[_refund_amount_cap])
 async def request_refund_tool(
     context: RunContextWrapper[EcommerceAgentChatContext],
     order_id: str,
@@ -272,7 +325,7 @@ async def request_order_cancel_tool(
     )
 
 
-@function_tool
+@function_tool(tool_input_guardrails=[_refund_amount_cap])
 async def request_price_protection_tool(
     context: RunContextWrapper[EcommerceAgentChatContext],
     order_id: str,
@@ -295,6 +348,15 @@ async def request_price_protection_tool(
     )
 
 
+def _format_hit(idx: int, record: dict[str, Any]) -> str:
+    """Render one retrieved record with a citation header the model can quote
+    back to the user. URL when present (official policy pages), else title."""
+    title = (record.get("title") or "").strip() or "知识库条目"
+    url = (record.get("url") or "").strip()
+    cite = url if url else title
+    return f"【参考{idx}｜来源：{cite}】\n{record.get('text', '')}"
+
+
 @function_tool
 async def search_policy(
     context: RunContextWrapper[EcommerceAgentChatContext], question: str
@@ -310,7 +372,7 @@ async def search_policy(
     if records is None:
         records = _keyword_search(question, _TOP_K)
 
-    texts = [r.get("text", "") for r in records if r.get("text")]
-    if not texts:
+    hits = [_format_hit(i + 1, r) for i, r in enumerate(records) if r.get("text")]
+    if not hits:
         return _NO_MATCH
-    return "\n\n".join(texts)
+    return "\n\n".join(hits)

@@ -1,16 +1,19 @@
 "use client";
 
 import { ChatKit, useChatKit } from "@openai/chatkit-react";
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { UserRound, TicketCheck, ShieldAlert } from "lucide-react";
 import { VoiceInput } from "./voice-input";
 
 type ChatKitPanelProps = {
   initialThreadId?: string | null;
+  threadId?: string | null;
   onThreadChange?: (threadId: string | null) => void;
   onResponseEnd?: () => void;
   onRunnerUpdate?: () => void;
   onRunnerEventDelta?: (events: any[]) => void;
   onRunnerBindThread?: (threadId: string) => void;
+  context?: Record<string, any>;
 };
 
 const CHATKIT_DOMAIN_KEY =
@@ -18,12 +21,53 @@ const CHATKIT_DOMAIN_KEY =
 
 export function ChatKitPanel({
   initialThreadId,
+  threadId,
   onThreadChange,
   onResponseEnd,
   onRunnerUpdate,
   onRunnerEventDelta,
   onRunnerBindThread,
+  context,
 }: ChatKitPanelProps) {
+  const escalated = context?.human_mode === "escalated";
+  const ticketId = (context?.ticket_id as string | null) ?? null;
+
+  // Poll /approvals every 2s while a thread is active so we can surface a
+  // banner that explains the spinner ("the model is paused waiting for a
+  // human approval", which otherwise looks identical to a stuck network).
+  const [pendingApprovals, setPendingApprovals] = useState<
+    { id: string; summary: string }[]
+  >([]);
+  const lastThreadRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!threadId) {
+      setPendingApprovals([]);
+      return;
+    }
+    lastThreadRef.current = threadId;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const r = await fetch(`/approvals?thread_id=${encodeURIComponent(threadId)}`);
+        const d = await r.json();
+        if (cancelled || lastThreadRef.current !== threadId) return;
+        const pending = (Array.isArray(d.approvals) ? d.approvals : []).filter(
+          (a: any) => a.status === "pending"
+        );
+        setPendingApprovals(
+          pending.map((a: any) => ({ id: a.id, summary: a.summary || "" }))
+        );
+      } catch {
+        // fail-quiet — banner just stays as last known
+      }
+    };
+    void poll();
+    const t = window.setInterval(poll, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+  }, [threadId]);
   const chatkit = useChatKit({
     api: {
       url: "/chatkit",
@@ -114,12 +158,34 @@ export function ChatKitPanel({
   );
 
   return (
-    <div className="flex flex-col h-full flex-1 bg-white shadow-sm border border-gray-200 border-t-0 rounded-xl">
-      <div className="bg-blue-600 text-white h-12 px-4 flex items-center rounded-t-xl">
+    <div className="flex flex-col h-full flex-1 bg-white shadow-sm border border-gray-200 border-t-0 rounded-xl relative">
+      <div className="bg-blue-600 text-white h-12 px-4 flex items-center gap-3 rounded-t-xl">
+        <UserRound className="h-5 w-5" />
         <h2 className="font-semibold text-sm sm:text-base lg:text-lg">
           Customer View
         </h2>
+        <span className="ml-auto flex items-center gap-2 text-xs font-light tracking-wide opacity-90">
+          {escalated && ticketId && (
+            <span className="inline-flex items-center gap-1 bg-amber-500/90 text-white rounded-full px-2 py-0.5 text-[11px]">
+              <TicketCheck className="h-3 w-3" />
+              已升级人工 · 工单 {ticketId}
+            </span>
+          )}
+          京东客服
+        </span>
       </div>
+      {pendingApprovals.length > 0 && (
+        <div className="flex items-center gap-2 bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2 text-xs">
+          <ShieldAlert className="h-4 w-4 text-amber-600 flex-shrink-0" />
+          <span className="font-medium">等待人工审批：</span>
+          <span className="truncate flex-1">
+            {pendingApprovals[0].summary}
+          </span>
+          <span className="text-amber-700 whitespace-nowrap">
+            请到右侧 Agent View · Approvals 面板点 Approve / Reject
+          </span>
+        </div>
+      )}
       <div className="flex-1 overflow-hidden">
         <ChatKit
           control={chatkit.control}

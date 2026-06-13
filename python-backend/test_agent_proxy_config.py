@@ -16,10 +16,10 @@ class AgentProxyConfigTest(unittest.TestCase):
         self.assertIn("AI巴士", source)
         self.assertIn("set_default_openai_client", source)
 
-    def test_ecommerce_guardrails_use_gpt55_default_client(self) -> None:
+    def test_ecommerce_guardrails_use_lightweight_default_client(self) -> None:
         source = GUARDRAILS_PATH.read_text(encoding="utf-8")
 
-        self.assertIn('GUARDRAIL_MODEL = "gpt-5.5"', source)
+        self.assertIn('GUARDRAIL_MODEL = "gpt-5.4-mini"', source)
         self.assertNotIn("qwen-plus", source)
         self.assertNotIn("DASHSCOPE_API_KEY", source)
 
