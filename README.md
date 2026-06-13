@@ -1,199 +1,187 @@
-# 京东客服 Agent 编排 Demo
+# Agentic Customer Support Platform
 
-基于 [OpenAI Agents Python SDK](https://github.com/openai/openai-agents-python) + [ChatKit](https://github.com/openai/chatkit-js) 构建的中文电商客服多智能体编排示例。从 [openai/openai-cs-agents-demo](https://github.com/openai/openai-cs-agents-demo) 的航司 demo fork 而来，业务面切换到京东电商场景，并在 SDK 之上叠加了 Session 持久化、本地 Tracing、出口护栏、结构化输出、MCP 真后端接入、agents-as-tools 多意图 fan-out、语音输入等能力。
+面向中文电商场景的多智能体客服平台，基于 [OpenAI Agents Python SDK](https://github.com/openai/openai-agents-python) 与 [ChatKit](https://github.com/openai/chatkit-js) 构建。项目围绕“咨询 -> 检索 -> 处理 -> 审批 -> 追踪”形成可闭环链路，支持会话持久化、Tracing、输入输出护栏、结构化摘要、MCP 后端接入、agents-as-tools 多意图分发和语音输入，可直接用于本地演示与上线前集成验证。
 
 ---
 
-## 1. 系统架构
+## 1. 平台概览
 
 ```mermaid
 flowchart LR
     subgraph 浏览器
-        UI[Next.js 前端<br/>localhost:3000]
+        UI[Next.js 前端]
         Mic[麦克风]
     end
 
     subgraph 主后端 ":8000"
-        FastAPI[FastAPI<br/>main.py]
-        Runner[Agents SDK<br/>Runner.run_streamed]
+        FastAPI[FastAPI]
+        Runner[Agents SDK Runner]
         ChatKit[ChatKit Server]
-        Store[(SQLiteSession<br/>.agent_sessions.db)]
-        Trace[(SQLite Trace<br/>.agent_traces.db)]
-        Approv[(In-mem<br/>ApprovalStore)]
+        Store[(SQLite Session)]
+        Trace[(SQLite Trace)]
+        Approv[(Approval Store)]
     end
 
     subgraph 真后端 ":9001"
-        Real[jd_realbackend<br/>FastAPI]
+        Real[业务后端]
     end
 
     subgraph MCP stdio
-        MCP[jd_mcp_server<br/>FastMCP]
+        MCP[MCP Server]
     end
 
     subgraph 外部服务
-        Proxy[gpt-5.5 代理<br/>词元神 / AI巴士 / 猫猫小铺]
-        Bailian[阿里百炼<br/>vision + embedding]
+        Proxy[OpenAI 兼容模型代理]
+        Bailian[百炼 Vision / Embedding]
         Tencent[腾讯云 ASR]
     end
 
-    UI -->|/chatkit SSE| FastAPI
-    Mic -->|WAV 16k| UI
-    UI -->|/stt multipart| FastAPI
-    UI -->|/approvals| FastAPI
-    UI -->|/traces| FastAPI
+    UI --> FastAPI
+    Mic --> UI
     FastAPI --> Runner
-    Runner -->|chat.completions| Proxy
-    Runner --> ChatKit
+    FastAPI --> ChatKit
+    Runner --> Proxy
     Runner --> Store
     Runner --> Trace
     Runner --> MCP
-    MCP -->|httpx| Real
-    FastAPI -->|OCR| Bailian
-    FastAPI -->|STT| Tencent
-    Runner -->|工具调用| Approv
+    MCP --> Real
+    FastAPI --> Bailian
+    FastAPI --> Tencent
+    Runner --> Approv
 ```
 
 ---
 
-## 2. 已实现能力
+## 2. 核心能力
 
-| 能力 | 实现位置 | SDK 特性 |
-|---|---|---|
-| 多 agent 编排（triage + 4 专员） | `python-backend/ecommerce/agents.py` | `Agent` / `handoff` |
-| 输入护栏（相关性 / 越狱） | `python-backend/ecommerce/guardrails.py` | `@input_guardrail` |
-| 输出护栏（PII / 虚假承诺 / 品牌中立） | `python-backend/ecommerce/output_guardrails.py` | `@output_guardrail` |
-| Session 持久化（SQLite 落盘） | `python-backend/server.py` | `SQLiteSession` |
-| 本地 Tracing + 自绘前端面板 | `python-backend/tracing_store.py`、`ui/components/traces-panel.tsx` | `TracingProcessor` |
-| 结构化输出（CaseSummary） | `python-backend/ecommerce/summary_agent.py` | `Agent(output_type=...)` |
-| MCP stdio 服务 + 真后端 | `python-backend/jd_mcp_server.py`、`jd_realbackend.py` | `MCPServerStdio` |
-| Agents-as-tools 多意图 fan-out | `python-backend/ecommerce/agents.py` | `Agent.as_tool()` |
-| 软审批（退款 / 取消 / 价保） | `python-backend/ecommerce/approvals.py` | 自实现 |
-| 图片输入（OCR + 描述） | `python-backend/ecommerce/vision.py` | 百炼 qwen-vl |
-| 语音输入（push-to-talk） | `python-backend/ecommerce/stt.py`、`ui/components/voice-input.tsx` | 腾讯 ASR |
-
-详细能力 / 差距 / 后续规划见 [`docs/ROADMAP.md`](docs/ROADMAP.md)。
+| 能力 | 说明 |
+|---|---|
+| 多智能体编排 | triage + 专员 agent 协作处理客服请求 |
+| 输入护栏 | 相关性检查与越狱防护 |
+| 输出护栏 | PII、虚假承诺、品牌中立等约束 |
+| 会话持久化 | SQLite 落盘，支持刷新后继续对话 |
+| Tracing | 本地追踪与前端面板联动 |
+| 结构化摘要 | 自动生成会话摘要 |
+| 真后端接入 | 通过 MCP 对接真实业务接口 |
+| 多意图分发 | agents-as-tools 将复杂请求拆分处理 |
+| 软审批 | 退款、取消、价保等动作进入审批流 |
+| 语音输入 | 支持 push-to-talk 语音转写 |
 
 ---
 
-## 3. 快速启动
+## 3. 项目特点
 
-### 3.1 凭证准备
+- 面向真实电商客服流程，覆盖售前咨询、订单查询、售后处理和人工交接等关键环节
+- 支持完整业务闭环，包括知识检索、工具调用、审批流、工单沉淀和过程追踪
+- 前后端、模型调用、MCP 后端、语音输入和 CI 检查均已集成，便于上线前验证
+- 通过输入输出护栏、结构化摘要和本地 Trace 降低客服自动化系统的风险与排查成本
 
-后端启动时从 `~/Desktop/API key.txt`（Windows 下 `C:\Users\<你>\Desktop\API key.txt`）按段落名匹配读取以下条目：
+---
 
-```
-13.AI巴士
-https://api.ccbus.top
-sk-xxxxxxxxxxxxxxxx
+## 4. 快速启动
 
-18.阿里云百炼
-https://bailian.console.aliyun.com
-sk-xxxxxxxxxxxxxxxx
+### 4.1 凭证准备
 
-腾讯云密钥
-SecretId AKIDxxxxxxxxxxxxxxxx
-SecretKey xxxxxxxxxxxxxxxxxxxxxxxx
-```
+后端支持通过环境变量或本地配置文件提供模型、视觉识别和语音识别凭证。
 
 至少需要：
 
-- 一组 OpenAI 兼容代理（默认 `AI巴士`，可改 `python-backend/main.py` 的 `_load_proxy_from_key_file(...)`）
-- `DASHSCOPE_API_KEY`（百炼，图片 OCR） — 走 `.env` 或环境变量
-- 腾讯云 SecretId/SecretKey（语音输入） — 也可走 `.env`
+- 一组 OpenAI 兼容模型服务
+- `DASHSCOPE_API_KEY`
+- 腾讯云 `SecretId` / `SecretKey`
 
-### 3.2 方案 A：Docker Compose（推荐）
+### 4.2 方式一：Docker Compose
 
 ```bash
 docker compose up --build
 ```
 
-浏览器打开 http://localhost:3000
+浏览器打开：
 
-compose 会拉起 3 个服务：`ui:3000`、`backend:8000`、`realbackend:9001`，并把 `~/Desktop/API key.txt` 与 `.env` 挂入 backend 容器。Windows 下默认 mount 路径已配好，把 `${HOME}` 换成 `C:\Users\<你>` 同样工作。
+```text
+http://localhost:3000
+```
 
-### 3.3 方案 B：本机直接跑
+### 4.3 方式二：本机启动
 
-**后端（终端 1）**
+后端：
+
 ```bash
 cd python-backend
 python -m venv .venv
-.venv\Scripts\activate            # Windows
-# source .venv/bin/activate       # Linux/macOS
+.venv\Scripts\activate
 pip install -r requirements.txt
 python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-主后端启动时会自动 spawn 一个 `jd_realbackend` 子进程（port 9001）和一个 MCP stdio 子进程。
+前端：
 
-**前端（终端 2）**
 ```bash
 cd ui
 npm install
 npm run dev:next
 ```
 
-浏览器打开 http://localhost:3000
+浏览器打开：
 
-### 3.4 跑测试
+```text
+http://localhost:3000
+```
+
+---
+
+## 5. 测试
 
 ```bash
-# 后端静态断言（无网络）
 cd python-backend
 python -m unittest discover -s . -p 'test_*.py'
+```
 
-# 前端 TS 检查
+```bash
 cd ../ui
 npx tsc --noEmit
 ```
 
-GitHub Actions 在 push main 和所有 PR 上都跑这两步，见 `.github/workflows/ci.yml`。
-
 ---
 
-## 4. 仓库目录速览
+## 6. 目录速览
 
-```
+```text
 .
-├── docs/ROADMAP.md                  # 能力 & 后续规划
-├── docker-compose.yml               # 一键拉起三服务
-├── .github/workflows/ci.yml         # pytest + tsc CI
+├── docs/ROADMAP.md
+├── docker-compose.yml
+├── .github/workflows/ci.yml
 ├── python-backend/
-│   ├── Dockerfile
-│   ├── main.py                      # FastAPI + 代理装载 + MCP/真后端启动钩子
-│   ├── server.py                    # EcommerceChatKitServer：Runner + Session + Trace + Summary
-│   ├── tracing_store.py             # SQLite trace processor
-│   ├── jd_realbackend.py            # :9001 真后端
-│   ├── jd_mcp_server.py             # MCP stdio 桥接
+│   ├── main.py
+│   ├── server.py
+│   ├── tracing_store.py
+│   ├── jd_realbackend.py
+│   ├── jd_mcp_server.py
 │   └── ecommerce/
-│       ├── agents.py                # 5 个 agent + handoff + as_tool
-│       ├── tools.py                 # 查询工具 + 软审批工具
-│       ├── guardrails.py            # 输入护栏
-│       ├── output_guardrails.py     # 输出护栏
-│       ├── approvals.py             # 软审批 store
-│       ├── summary_agent.py         # 结构化输出 CaseSummary
-│       ├── stt.py                   # 腾讯 ASR
-│       ├── vision.py                # 百炼 qwen-vl
-│       ├── widgets.py               # ChatKit widget
-│       ├── mock_orders.json
-│       └── knowledge/
 └── ui/
-    ├── Dockerfile
     ├── app/page.tsx
-    ├── components/                  # 4 面板 + voice-input + chatkit-panel ...
-    └── next.config.mjs              # /chatkit /traces /approvals /stt 代理到 :8000
+    ├── components/
+    └── next.config.mjs
 ```
 
 ---
 
-## 5. 常见问题
+## 7. 常见问题
 
-- **`PermissionDeniedError: 403 Your request was blocked.`** — 代理网关 WAF 拦截 OpenAI SDK 的 `x-stainless-*` 指纹头。`main.py` 自动剥除，确保是最新代码即可。
-- **腾讯云 ASR `User is unopened`** — 账号没开通"一句话识别"。去 https://console.cloud.tencent.com/asr 开通，5 万次/月免费。
-- **`empty transcript`** — 录音时长不足 0.6 秒或环境太吵。
-- **`.agent_sessions.db` / `.agent_traces.db` 删不掉** — 后端进程持有 SQLite 句柄。先停后端再删。
+- **`PermissionDeniedError: 403 Your request was blocked.`**
+  代理网关可能拦截了部分请求头，确认使用的是最新代码。
+
+- **腾讯云 ASR `User is unopened`**
+  账号未开通一句话识别能力。
+
+- **`empty transcript`**
+  录音时长过短或环境噪声过大。
+
+- **`.agent_sessions.db` / `.agent_traces.db` 删除失败**
+  先停止后端进程。
 
 ---
 
-## 6. License
+## 8. License
 
-延续 origin/main 的 MIT 协议。
+MIT
