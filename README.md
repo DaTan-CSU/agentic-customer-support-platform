@@ -8,12 +8,12 @@
 
 ```mermaid
 flowchart LR
-    subgraph 浏览器
+    subgraph browser["浏览器"]
         UI[Next.js 前端]
         Mic[麦克风]
     end
 
-    subgraph 主后端 ":8000"
+    subgraph backend["主后端 :8000"]
         FastAPI[FastAPI]
         Runner[Agents SDK Runner]
         ChatKit[ChatKit Server]
@@ -22,15 +22,15 @@ flowchart LR
         Approv[(Approval Store)]
     end
 
-    subgraph 真后端 ":9001"
+    subgraph realbackend["真后端 :9001"]
         Real[业务后端]
     end
 
-    subgraph MCP stdio
+    subgraph mcp["MCP stdio"]
         MCP[MCP Server]
     end
 
-    subgraph 外部服务
+    subgraph external["外部服务"]
         Proxy[OpenAI 兼容模型代理]
         Bailian[百炼 Vision / Embedding]
         Tencent[腾讯云 ASR]
