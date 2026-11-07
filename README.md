@@ -1,51 +1,74 @@
-# 中文电商客服多智能体编排系统
+# 电商客服多智能体系统
 
-输入订单问题，由分诊客服协调订单、物流和售后专员；退款请求暂停等待人工审批，处理过程可在本地 Trace 面板查看。
+这是一个中文电商客服示例，覆盖订单、物流、售后和政策咨询。分诊客服根据用户意图把请求交给专员；复合问题可以并行调用多个专员，再汇总成一条回复。政策查询使用 RAG，优惠和配送时效通过 MCP 工具访问业务接口，退款流程使用 SDK 原生 HITL 人工审批，Session 和 Trace 保存在本地 SQLite。
 
-基于 [OpenAI 开源客服演示](https://github.com/openai/openai-cs-agents-demo) 扩展，使用 Agents Python SDK、ChatKit、FastAPI 和 Next.js。项目面向求职作品展示和本地集成演示。
+项目基于 [OpenAI 开源客服示例](https://github.com/openai/openai-cs-agents-demo)，后端使用 Agents Python SDK、ChatKit 和 FastAPI，前端使用 Next.js。
 
-![中文电商客服界面](screenshot.jpg)
+## 核心功能
 
-上图为仓库已有电商界面截图。录屏步骤见 [演示脚本](docs/demo.md)。
+- 分诊、订单、物流、售后和 FAQ 专员共享订单上下文。
+- 单一意图通过 handoff 转交专员；复合意图通过 agents-as-tools 调用多个专员。
+- 政策、商品知识和常见问题使用向量检索，并提供关键词检索回退。
+- 优惠券、促销和配送时效通过 MCP stdio 服务连接 HTTP 业务接口。
+- 退款工具使用 `needs_approval` 暂停执行，人工批准后恢复；取消订单和价保也保留审批入口。
+- 前端展示当前 Agent、工具调用、审批状态、结构化会话摘要和 Trace。
+- 图片识别、向量模型和语音转写作为可选服务接入。
 
-## 从航空示例到电商工作流
+## 架构
 
-上游提供客服多智能体示例及前后端基础。此仓库在其基础上扩展了：
+```mermaid
+flowchart LR
+    UI["ChatKit UI"] --> API["FastAPI and ChatKit"]
+    API --> TRIAGE["Triage agent"]
+    TRIAGE -->|handoff| SPECIALISTS["Order, logistics, after-sales, FAQ"]
+    TRIAGE -->|agents-as-tools| SPECIALISTS
+    SPECIALISTS --> RAG["Policy RAG"]
+    SPECIALISTS --> MCP["MCP stdio"]
+    MCP --> HTTP["Mock business HTTP service"]
+    SPECIALISTS --> HITL["Human approval"]
+    API --> STORE["SQLite Session and Trace"]
+```
 
-- **中文电商领域**：订单、物流、售后、政策 FAQ 专员及共享上下文。
-- **两种编排路径**：单一意图通过 handoff 交接；复合意图通过 agents-as-tools 调用最多三个专员并汇总。
-- **人工审批**：退款使用 SDK 原生 `needs_approval`，批准后恢复执行；取消订单和价保使用独立审批申请。
-- **可观察性**：SQLite 会话与 Trace、前端工具调用面板、结构化 CaseSummary。
-- **工具与检索**：MCP stdio 服务调用 HTTP 演示后端；政策知识库支持向量检索与关键词兜底。
-- **可选输入**：百炼图片识别、腾讯云语音转写。
+## 快速开始
 
-## 哪些数据来自模拟
-
-| 部分 | 当前实现 |
-|---|---|
-| 模型与编排 | 调用配置的真实模型服务，执行 Agent、工具、护栏及审批流程 |
-| MCP / HTTP | 使用真实协议和 HTTP 请求，业务服务返回模拟优惠券、活动和配送 ETA |
-| 订单与物流 | 来自 `python-backend/ecommerce/mock_orders.json`，包含固定历史日期 |
-| 退款 | 人工批准后返回模拟退款结果，不连接支付渠道，也不更新真实订单 |
-| 取消与价保 | 审批后执行模拟动作 |
-| SDK 对话历史与 Trace | SQLite 持久化；Compose 使用数据卷 |
-| ChatKit 线程列表、附件、审批与 CRM 工单 | 进程内存保存，后端重启后丢失；SQLite 历史不等于完整 UI 会话恢复 |
-
-界面采用京东购物场景及模拟数据；本项目是个人扩展作品，与京东官方客服服务无关。退款成功等界面文字均属于演示业务结果。
-
-## 本地启动
-
-需要 Python 3.11+、Node.js 20+，以及支持工具调用的 OpenAI 兼容文本模型。图片、向量检索和语音凭证均为可选；缺少 embedding 服务时使用关键词检索。
-
-从根目录复制配置模板：
+需要 Python 3.11+、Node.js 20+，以及一个支持工具调用的 OpenAI 兼容文本模型。先复制配置模板：
 
 ```bash
 cp .env.example .env
 ```
 
-设置文本服务的 `OPENAI_BASE_URL`、`OPENAI_API_KEY` 和 `OPENAI_MODEL`。凭证也可由密钥管理器注入进程环境；不要将真实密钥提交到仓库。可选服务字段见 `.env.example`。
+在根目录 `.env` 中选择一种文本模型配置。以下示例只使用占位符：
 
-**Windows 本机启动**（两个终端）：
+**OpenAI**
+
+```dotenv
+OPENAI_API_KEY=your-api-key
+OPENAI_MODEL=gpt-4o-mini
+```
+
+**阿里云百炼**
+
+```dotenv
+OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+OPENAI_API_KEY=your-bailian-api-key
+OPENAI_MODEL=qwen-plus
+```
+
+**其他 OpenAI 兼容网关**
+
+```dotenv
+OPENAI_BASE_URL=https://example.com/v1
+OPENAI_API_KEY=your-api-key
+OPENAI_MODEL=your-model
+```
+
+`OPENAI_BASE_URL` 可以省略，省略时使用 OpenAI SDK 默认地址。`OPENAI_MODEL` 省略时使用项目默认模型 `gpt-5.4-mini`。不要把真实密钥提交到仓库。
+
+图片识别和向量检索使用 `DASHSCOPE_API_KEY`，语音转写使用 `TENCENTCLOUD_SECRET_ID` 与 `TENCENTCLOUD_SECRET_KEY`，两者都可留空。没有向量服务时，政策检索使用关键词回退。旧密钥文件只有在显式设置 `KEY_FILE_PATH` 时才会读取。
+
+### Windows 本机
+
+在第一个终端启动后端：
 
 ```powershell
 cd python-backend
@@ -54,61 +77,60 @@ py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
+在第二个终端启动前端：
+
 ```powershell
 cd ui
 npm install
 npm run dev:next
 ```
 
-打开 [localhost:3000](http://localhost:3000)。后端同时启动端口 9001 的模拟业务服务。前端默认转发到 `http://127.0.0.1:8000`，可用 `BACKEND_URL` 更改。
+打开 [http://localhost:3000](http://localhost:3000)。后端会同时启动端口 9001 的模拟业务 HTTP 服务。前端默认把请求转发到 `http://127.0.0.1:8000`，也可以通过 `BACKEND_URL` 修改。
 
-**Docker Compose**：
+### Docker Compose
 
 ```bash
 docker compose up --build
 ```
 
-根目录 `.env` 注入后端；前端在 Compose 网络内通过 `http://backend:8000` 访问后端。SQLite 数据存储在 `backend-data` 卷中。
+Compose 从根目录 `.env` 注入后端配置，前端通过 `http://backend:8000` 访问后端，Session 和 Trace 写入 `backend-data` 数据卷。
 
-## 演示路线
+## 使用示例
 
-完整录屏步骤与解说见 [演示脚本](docs/demo.md)。
+从新建会话开始，按 [使用指南](docs/demo.md) 操作。最短路径是先发送一个同时包含订单和物流的问题，再提交一笔退款申请，在审批面板批准后查看恢复执行的结果和 Trace。
 
-1. 新建会话，输入：`帮我查一下订单 DMO20260101 的订单信息和物流。`
-2. 核对工具返回的商品、142.8 元金额与签收信息。
-3. 输入：`我要申请退款142.8元，原因是尺码不合适。`
-4. 在左侧审批面板核对订单与金额，点击 `Approve`，观察会话恢复。
-5. 展开 Trace，查看分诊、专员工具与退款执行过程。
+## 数据与存储
 
-这是固定 fixture 的演示路线。模型实际路由和回复可能变化；以工具返回值及审批状态为准。
+- `python-backend/ecommerce/mock_orders.json` 提供固定订单、物流和售后记录；MCP HTTP 服务返回固定的优惠券、促销和配送时效数据。
+- 退款、取消和价保只执行模拟业务动作，不连接支付渠道，也不修改真实订单。
+- Agents SDK 会话历史和本地 Trace 写入 SQLite。默认文件位于 `python-backend/.agent_sessions.db` 和 `python-backend/.agent_traces.db`；设置 `DATA_DIR` 后可以切换目录，Compose 使用 `/app/.data`。
+- ChatKit 线程列表、附件、审批记录和 CRM 工单保存在进程内存中，后端重启后会丢失。SQLite 中的 SDK 历史和 Trace 不等同于完整的 UI 状态恢复。
 
-## 代码入口
+界面采用京东购物场景，项目与京东官方客服服务无关。
 
-| 路径 | 用途 |
+## 项目结构
+
+| 路径 | 作用 |
 |---|---|
-| `python-backend/main.py` | 模型配置、HTTP 路由、MCP 与业务服务启动 |
-| `python-backend/server.py` | ChatKit 流式会话、SDK 审批恢复、SQLite Session |
+| `python-backend/main.py` | 模型配置、HTTP 路由、MCP 和业务服务启动 |
+| `python-backend/server.py` | ChatKit 流式会话、审批恢复和 SQLite Session |
 | `python-backend/ecommerce/` | Agent、工具、护栏、检索、模拟订单和审批存储 |
 | `python-backend/tracing_store.py` | 本地 Trace 持久化 |
-| `python-backend/jd_mcp_server.py` | MCP → HTTP 工具边界 |
+| `python-backend/jd_mcp_server.py` | MCP 到 HTTP 工具边界 |
 | `python-backend/jd_realbackend.py` | 模拟业务 HTTP 服务 |
-| `ui/components/` | 对话、审批、Agent 与 Trace 面板 |
+| `ui/components/` | 对话、审批、Agent 和 Trace 面板 |
 
-## 检查
+## 开发检查
 
 ```powershell
 cd python-backend
 .\.venv\Scripts\python.exe -m unittest discover -s . -p "test_*.py"
-cd ../ui
+cd ..\ui
 npx tsc --noEmit --incremental false
 ```
 
-当前测试主要覆盖配置及代码约束；真实模型对话需按上述路线单独验证。
+真实模型请求需要可用的文本模型配置；本地检查不会替代对话流程验证。
 
-## 运行提示
+## 上游与许可
 
-- ChatKit 前端组件从 `cdn.platform.openai.com` 加载，需要浏览器能访问该域名。若左侧 Agent View 正常、右侧持续空白，先检查组件资源加载；这与文本模型密钥是两个独立配置环节。
-
-## 来源与许可
-
-上游：[openai/openai-cs-agents-demo](https://github.com/openai/openai-cs-agents-demo)。此仓库保留上游 MIT 许可及 OpenAI 版权声明，见 [LICENSE](LICENSE)。电商领域扩展在本仓库维护。
+本项目基于 [openai/openai-cs-agents-demo](https://github.com/openai/openai-cs-agents-demo)。上游代码按 MIT License 发布，仓库保留 [LICENSE](LICENSE) 中的 OpenAI 版权声明和许可文本；电商客服领域扩展在本仓库维护。
