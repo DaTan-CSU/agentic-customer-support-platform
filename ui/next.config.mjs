@@ -1,4 +1,7 @@
 /** @type {import('next').NextConfig} */
+// Compose supplies the service name; local development uses the host port.
+const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:8000";
+
 const nextConfig = {
   devIndicators: false,
   // Proxy /chat requests to the backend server
@@ -6,35 +9,35 @@ const nextConfig = {
     return [
       {
         source: "/chat",
-        destination: "http://127.0.0.1:8000/chat",
+        destination: `${backendUrl}/chat`,
       },
       {
         source: "/chatkit",
-        destination: "http://127.0.0.1:8000/chatkit",
+        destination: `${backendUrl}/chatkit`,
       },
       {
         source: "/chatkit/:path*",
-        destination: "http://127.0.0.1:8000/chatkit/:path*",
+        destination: `${backendUrl}/chatkit/:path*`,
       },
       {
         source: "/attachments/:path*",
-        destination: "http://127.0.0.1:8000/attachments/:path*",
+        destination: `${backendUrl}/attachments/:path*`,
       },
       {
         source: "/traces",
-        destination: "http://127.0.0.1:8000/traces",
+        destination: `${backendUrl}/traces`,
       },
       {
         source: "/approvals",
-        destination: "http://127.0.0.1:8000/approvals",
+        destination: `${backendUrl}/approvals`,
       },
       {
         source: "/approvals/:path*",
-        destination: "http://127.0.0.1:8000/approvals/:path*",
+        destination: `${backendUrl}/approvals/:path*`,
       },
       {
         source: "/stt",
-        destination: "http://127.0.0.1:8000/stt",
+        destination: `${backendUrl}/stt`,
       },
     ];
   },

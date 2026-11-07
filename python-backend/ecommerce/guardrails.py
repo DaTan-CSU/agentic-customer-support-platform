@@ -1,5 +1,7 @@
 from __future__ import annotations as _annotations
 
+import os
+
 from pydantic import BaseModel
 
 from agents import (
@@ -12,7 +14,7 @@ from agents import (
     input_guardrail,
 )
 
-GUARDRAIL_MODEL = "gpt-5.4-mini"
+GUARDRAIL_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
 # Low temperature: the guardrail returns a single verdict token; we want this
 # decision stable across retries instead of drifting on borderline cases.
 _GUARDRAIL_SETTINGS = ModelSettings(temperature=0.2)

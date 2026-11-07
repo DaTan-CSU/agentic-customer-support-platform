@@ -12,11 +12,13 @@ to triage a JD CS conversation. Anything richer belongs in a real CRM.
 
 from __future__ import annotations
 
+import os
+
 from pydantic import BaseModel, Field
 
 from agents import Agent, ModelSettings
 
-SUMMARY_MODEL = "gpt-5.4-mini"
+SUMMARY_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
 # Low temperature: forces stable JSON output. With default temperature the
 # model occasionally drifts on enum-typed fields (intent / sentiment) and
 # trips ModelBehaviorError when the proxy doesn't enforce the JSON schema.

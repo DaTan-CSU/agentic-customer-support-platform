@@ -1,187 +1,114 @@
-# Agentic Customer Support Platform
+# 中文电商客服多智能体编排系统
 
-面向中文电商场景的多智能体客服平台，基于 [OpenAI Agents Python SDK](https://github.com/openai/openai-agents-python) 与 [ChatKit](https://github.com/openai/chatkit-js) 构建。项目围绕“咨询 -> 检索 -> 处理 -> 审批 -> 追踪”形成可闭环链路，支持会话持久化、Tracing、输入输出护栏、结构化摘要、MCP 后端接入、agents-as-tools 多意图分发和语音输入，可直接用于本地演示与上线前集成验证。
+输入订单问题，由分诊客服协调订单、物流和售后专员；退款请求暂停等待人工审批，处理过程可在本地 Trace 面板查看。
 
----
+基于 [OpenAI 开源客服演示](https://github.com/openai/openai-cs-agents-demo) 扩展，使用 Agents Python SDK、ChatKit、FastAPI 和 Next.js。项目面向求职作品展示和本地集成演示。
 
-## 1. 平台概览
+![中文电商客服界面](screenshot.jpg)
 
-```mermaid
-flowchart LR
-    subgraph browser["浏览器"]
-        UI[Next.js 前端]
-        Mic[麦克风]
-    end
+上图为仓库已有电商界面截图。录屏步骤见 [演示脚本](docs/demo.md)。
 
-    subgraph backend["主后端 :8000"]
-        FastAPI[FastAPI]
-        Runner[Agents SDK Runner]
-        ChatKit[ChatKit Server]
-        Store[(SQLite Session)]
-        Trace[(SQLite Trace)]
-        Approv[(Approval Store)]
-    end
+## 从航空示例到电商工作流
 
-    subgraph realbackend["真后端 :9001"]
-        Real[业务后端]
-    end
+上游提供客服多智能体示例及前后端基础。此仓库在其基础上扩展了：
 
-    subgraph mcp["MCP stdio"]
-        MCP[MCP Server]
-    end
+- **中文电商领域**：订单、物流、售后、政策 FAQ 专员及共享上下文。
+- **两种编排路径**：单一意图通过 handoff 交接；复合意图通过 agents-as-tools 调用最多三个专员并汇总。
+- **人工审批**：退款使用 SDK 原生 `needs_approval`，批准后恢复执行；取消订单和价保使用独立审批申请。
+- **可观察性**：SQLite 会话与 Trace、前端工具调用面板、结构化 CaseSummary。
+- **工具与检索**：MCP stdio 服务调用 HTTP 演示后端；政策知识库支持向量检索与关键词兜底。
+- **可选输入**：百炼图片识别、腾讯云语音转写。
 
-    subgraph external["外部服务"]
-        Proxy[OpenAI 兼容模型代理]
-        Bailian[百炼 Vision / Embedding]
-        Tencent[腾讯云 ASR]
-    end
+## 哪些数据来自模拟
 
-    UI --> FastAPI
-    Mic --> UI
-    FastAPI --> Runner
-    FastAPI --> ChatKit
-    Runner --> Proxy
-    Runner --> Store
-    Runner --> Trace
-    Runner --> MCP
-    MCP --> Real
-    FastAPI --> Bailian
-    FastAPI --> Tencent
-    Runner --> Approv
-```
-
----
-
-## 2. 核心能力
-
-| 能力 | 说明 |
+| 部分 | 当前实现 |
 |---|---|
-| 多智能体编排 | triage + 专员 agent 协作处理客服请求 |
-| 输入护栏 | 相关性检查与越狱防护 |
-| 输出护栏 | PII、虚假承诺、品牌中立等约束 |
-| 会话持久化 | SQLite 落盘，支持刷新后继续对话 |
-| Tracing | 本地追踪与前端面板联动 |
-| 结构化摘要 | 自动生成会话摘要 |
-| 真后端接入 | 通过 MCP 对接真实业务接口 |
-| 多意图分发 | agents-as-tools 将复杂请求拆分处理 |
-| 软审批 | 退款、取消、价保等动作进入审批流 |
-| 语音输入 | 支持 push-to-talk 语音转写 |
+| 模型与编排 | 调用配置的真实模型服务，执行 Agent、工具、护栏及审批流程 |
+| MCP / HTTP | 使用真实协议和 HTTP 请求，业务服务返回模拟优惠券、活动和配送 ETA |
+| 订单与物流 | 来自 `python-backend/ecommerce/mock_orders.json`，包含固定历史日期 |
+| 退款 | 人工批准后返回模拟退款结果，不连接支付渠道，也不更新真实订单 |
+| 取消与价保 | 审批后执行模拟动作 |
+| SDK 对话历史与 Trace | SQLite 持久化；Compose 使用数据卷 |
+| ChatKit 线程列表、附件、审批与 CRM 工单 | 进程内存保存，后端重启后丢失；SQLite 历史不等于完整 UI 会话恢复 |
 
----
+界面采用京东购物场景及模拟数据；本项目是个人扩展作品，与京东官方客服服务无关。退款成功等界面文字均属于演示业务结果。
 
-## 3. 项目特点
+## 本地启动
 
-- 面向真实电商客服流程，覆盖售前咨询、订单查询、售后处理和人工交接等关键环节
-- 支持完整业务闭环，包括知识检索、工具调用、审批流、工单沉淀和过程追踪
-- 前后端、模型调用、MCP 后端、语音输入和 CI 检查均已集成，便于上线前验证
-- 通过输入输出护栏、结构化摘要和本地 Trace 降低客服自动化系统的风险与排查成本
+需要 Python 3.11+、Node.js 20+，以及支持工具调用的 OpenAI 兼容文本模型。图片、向量检索和语音凭证均为可选；缺少 embedding 服务时使用关键词检索。
 
----
-
-## 4. 快速启动
-
-### 4.1 凭证准备
-
-后端支持通过环境变量或本地配置文件提供模型、视觉识别和语音识别凭证。
-
-至少需要：
-
-- 一组 OpenAI 兼容模型服务
-- `DASHSCOPE_API_KEY`
-- 腾讯云 `SecretId` / `SecretKey`
-
-### 4.2 方式一：Docker Compose
+从根目录复制配置模板：
 
 ```bash
-docker compose up --build
+cp .env.example .env
 ```
 
-浏览器打开：
+设置文本服务的 `OPENAI_BASE_URL`、`OPENAI_API_KEY` 和 `OPENAI_MODEL`。凭证也可由密钥管理器注入进程环境；不要将真实密钥提交到仓库。可选服务字段见 `.env.example`。
 
-```text
-http://localhost:3000
-```
+**Windows 本机启动**（两个终端）：
 
-### 4.3 方式二：本机启动
-
-后端：
-
-```bash
+```powershell
 cd python-backend
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-python -m uvicorn main:app --host 0.0.0.0 --port 8000
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
-前端：
-
-```bash
+```powershell
 cd ui
 npm install
 npm run dev:next
 ```
 
-浏览器打开：
+打开 [localhost:3000](http://localhost:3000)。后端同时启动端口 9001 的模拟业务服务。前端默认转发到 `http://127.0.0.1:8000`，可用 `BACKEND_URL` 更改。
 
-```text
-http://localhost:3000
-```
-
----
-
-## 5. 测试
+**Docker Compose**：
 
 ```bash
+docker compose up --build
+```
+
+根目录 `.env` 注入后端；前端在 Compose 网络内通过 `http://backend:8000` 访问后端。SQLite 数据存储在 `backend-data` 卷中。
+
+## 演示路线
+
+完整录屏步骤与解说见 [演示脚本](docs/demo.md)。
+
+1. 新建会话，输入：`帮我查一下订单 DMO20260101 的订单信息和物流。`
+2. 核对工具返回的商品、142.8 元金额与签收信息。
+3. 输入：`我要申请退款142.8元，原因是尺码不合适。`
+4. 在左侧审批面板核对订单与金额，点击 `Approve`，观察会话恢复。
+5. 展开 Trace，查看分诊、专员工具与退款执行过程。
+
+这是固定 fixture 的演示路线。模型实际路由和回复可能变化；以工具返回值及审批状态为准。
+
+## 代码入口
+
+| 路径 | 用途 |
+|---|---|
+| `python-backend/main.py` | 模型配置、HTTP 路由、MCP 与业务服务启动 |
+| `python-backend/server.py` | ChatKit 流式会话、SDK 审批恢复、SQLite Session |
+| `python-backend/ecommerce/` | Agent、工具、护栏、检索、模拟订单和审批存储 |
+| `python-backend/tracing_store.py` | 本地 Trace 持久化 |
+| `python-backend/jd_mcp_server.py` | MCP → HTTP 工具边界 |
+| `python-backend/jd_realbackend.py` | 模拟业务 HTTP 服务 |
+| `ui/components/` | 对话、审批、Agent 与 Trace 面板 |
+
+## 检查
+
+```powershell
 cd python-backend
-python -m unittest discover -s . -p 'test_*.py'
-```
-
-```bash
+.\.venv\Scripts\python.exe -m unittest discover -s . -p "test_*.py"
 cd ../ui
-npx tsc --noEmit
+npx tsc --noEmit --incremental false
 ```
 
----
+当前测试主要覆盖配置及代码约束；真实模型对话需按上述路线单独验证。
 
-## 6. 目录速览
+## 运行提示
 
-```text
-.
-├── docs/ROADMAP.md
-├── docker-compose.yml
-├── .github/workflows/ci.yml
-├── python-backend/
-│   ├── main.py
-│   ├── server.py
-│   ├── tracing_store.py
-│   ├── jd_realbackend.py
-│   ├── jd_mcp_server.py
-│   └── ecommerce/
-└── ui/
-    ├── app/page.tsx
-    ├── components/
-    └── next.config.mjs
-```
+- ChatKit 前端组件从 `cdn.platform.openai.com` 加载，需要浏览器能访问该域名。若左侧 Agent View 正常、右侧持续空白，先检查组件资源加载；这与文本模型密钥是两个独立配置环节。
 
----
+## 来源与许可
 
-## 7. 常见问题
-
-- **`PermissionDeniedError: 403 Your request was blocked.`**
-  代理网关可能拦截了部分请求头，确认使用的是最新代码。
-
-- **腾讯云 ASR `User is unopened`**
-  账号未开通一句话识别能力。
-
-- **`empty transcript`**
-  录音时长过短或环境噪声过大。
-
-- **`.agent_sessions.db` / `.agent_traces.db` 删除失败**
-  先停止后端进程。
-
----
-
-## 8. License
-
-MIT
+上游：[openai/openai-cs-agents-demo](https://github.com/openai/openai-cs-agents-demo)。此仓库保留上游 MIT 许可及 OpenAI 版权声明，见 [LICENSE](LICENSE)。电商领域扩展在本仓库维护。

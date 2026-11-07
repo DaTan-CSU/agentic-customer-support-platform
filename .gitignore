@@ -63,6 +63,7 @@ db.sqlite3-journal
 .agent_sessions.db-*
 .agent_traces.db
 .agent_traces.db-*
+.data/
 # Backend runtime logs (captured by ad-hoc PowerShell launchers)
 .backend.log
 .backend.log.err

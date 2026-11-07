@@ -18,6 +18,7 @@ let the original output through — better to ship than block on a flaky proxy.
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Any
 
@@ -32,7 +33,7 @@ from agents import (
     output_guardrail,
 )
 
-GUARDRAIL_MODEL = "gpt-5.4-mini"
+GUARDRAIL_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
 _GUARDRAIL_SETTINGS = ModelSettings(temperature=0.2)
 
 

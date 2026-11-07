@@ -12,6 +12,7 @@ ergonomics and avoids requiring a collector to be running.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import threading
 from pathlib import Path
@@ -21,7 +22,11 @@ from agents.tracing.processor_interface import TracingProcessor
 from agents.tracing.spans import Span
 from agents.tracing.traces import Trace
 
-TRACE_DB_PATH = Path(__file__).with_name(".agent_traces.db")
+# Preserve the original local database paths unless deployment explicitly sets
+# DATA_DIR (Compose uses /app/.data for its named volume).
+DATA_DIR = Path(os.environ.get("DATA_DIR", Path(__file__).parent))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+TRACE_DB_PATH = DATA_DIR / ".agent_traces.db"
 
 
 def _thread_id_from_metadata(meta: Any) -> str | None:

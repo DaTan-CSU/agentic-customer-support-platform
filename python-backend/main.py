@@ -11,11 +11,12 @@ from typing import Any, Dict
 import httpx
 from dotenv import load_dotenv
 
-load_dotenv()
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(PROJECT_ROOT / ".env")
 
-# --- Default model provider: gpt-5.5 via the AI巴士 proxy ---
-# Read the local key file at startup so all SDK agents use the same proxy without
-# hardcoding secrets in this repository.
+# --- Default model provider: OpenAI-compatible gateway ---
+# Credentials normally come from the project-root .env; a legacy key file is
+# supported only when KEY_FILE_PATH is explicitly configured.
 from openai import AsyncOpenAI
 from agents import set_default_openai_client, set_default_openai_api, set_tracing_disabled
 from agents.tracing import set_trace_processors
@@ -23,8 +24,10 @@ from agents.tracing import set_trace_processors
 from tracing_store import SQLiteTraceProcessor, load_traces_for_thread
 
 
-def _load_proxy_from_key_file(provider: str = "词元神") -> tuple[str, str] | None:
-    """Pull (base_url, api_key) for a named provider out of ~/Desktop/API key.txt.
+def _load_proxy_from_key_file(
+    provider: str = "词元神", key_file: Path | None = None
+) -> tuple[str, str] | None:
+    """Pull a legacy proxy pair from an explicitly configured key file.
 
     The file is a free-form list of providers, each section starting with a
     line containing the provider name. After that line we look forward for:
@@ -32,7 +35,11 @@ def _load_proxy_from_key_file(provider: str = "词元神") -> tuple[str, str] | 
       • an api key on either a `代码调用：sk-…` prefixed line, or a standalone
         `sk-…` line (covers providers that don't prefix the key)
     """
-    key_file = Path.home() / "Desktop" / "API key.txt"
+    if key_file is None:
+        configured_path = os.environ.get("KEY_FILE_PATH")
+        if not configured_path:
+            return None
+        key_file = Path(configured_path)
     try:
         lines = key_file.read_text(encoding="utf-8").splitlines()
     except OSError:
@@ -59,18 +66,19 @@ def _load_proxy_from_key_file(provider: str = "词元神") -> tuple[str, str] | 
     return None
 
 
-_proxy = _load_proxy_from_key_file("词元神")
-
-
-def _load_tencent_creds_from_key_file() -> tuple[str, str] | None:
-    """Pull (SecretId, SecretKey) for 腾讯云 ASR out of ~/Desktop/API key.txt.
+def _load_tencent_creds_from_key_file(key_file: Path | None = None) -> tuple[str, str] | None:
+    """Pull 腾讯云 ASR credentials from an explicitly configured key file.
 
     Key file format:
         腾讯云密钥
         SecretId AKID...
         SecretKey ...
     """
-    key_file = Path.home() / "Desktop" / "API key.txt"
+    if key_file is None:
+        configured_path = os.environ.get("KEY_FILE_PATH")
+        if not configured_path:
+            return None
+        key_file = Path(configured_path)
     try:
         lines = key_file.read_text(encoding="utf-8").splitlines()
     except OSError:
@@ -90,15 +98,23 @@ def _load_tencent_creds_from_key_file() -> tuple[str, str] | None:
     return None
 
 
-_tc = _load_tencent_creds_from_key_file()
-if _tc is not None:
-    os.environ.setdefault("TENCENTCLOUD_SECRET_ID", _tc[0])
-    os.environ.setdefault("TENCENTCLOUD_SECRET_KEY", _tc[1])
-if _proxy is None:
-    _base_url = os.environ.get("OPENAI_BASE_URL")
-    _api_key = os.environ.get("OPENAI_API_KEY")
-else:
-    _base_url, _api_key = _proxy
+_base_url = os.environ.get("OPENAI_BASE_URL")
+_api_key = os.environ.get("OPENAI_API_KEY")
+if not (_base_url or _api_key):
+    # Keep compatibility with the old local key file only when the path is
+    # explicitly configured. An API key alone must keep the official SDK path.
+    _proxy = _load_proxy_from_key_file("词元神")
+    if _proxy is not None:
+        _base_url, _api_key = _proxy
+
+if not (
+    os.environ.get("TENCENTCLOUD_SECRET_ID")
+    and os.environ.get("TENCENTCLOUD_SECRET_KEY")
+):
+    _tc = _load_tencent_creds_from_key_file()
+    if _tc is not None:
+        os.environ.setdefault("TENCENTCLOUD_SECRET_ID", _tc[0])
+        os.environ.setdefault("TENCENTCLOUD_SECRET_KEY", _tc[1])
 
 if _base_url and _api_key:
     # OpenAI SDK appends `/chat/completions` to base_url. Most key-file

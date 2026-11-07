@@ -1,5 +1,7 @@
 from __future__ import annotations as _annotations
 
+import os
+
 from agents import Agent, RunContextWrapper, handoff
 from agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX
 
@@ -17,7 +19,7 @@ from .tools import (
     search_policy,
 )
 
-MODEL = "gpt-5.4-mini"
+MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
 
 # Every front-facing agent runs the same input guardrails. Because the active
 # agent persists across turns (the user's next message goes straight to the

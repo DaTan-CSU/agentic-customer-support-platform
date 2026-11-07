@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -124,9 +125,16 @@ def _classify_runner_error(exc: Exception) -> str:
             AuthenticationError,
             BadRequestError,
             InternalServerError,
+            OpenAIError,
             RateLimitError,
         )
 
+        error_text = str(exc).lower()
+        if isinstance(exc, OpenAIError) and "client option must be set" in error_text:
+            return (
+                "模型服务未配置 API 密钥，请在项目根目录 .env 中设置 "
+                "OPENAI_API_KEY；使用百炼时还需设置 OPENAI_BASE_URL 和 OPENAI_MODEL。"
+            )
         if isinstance(exc, RateLimitError):
             return "调用频率过高，请稍后再试。"
         if isinstance(exc, AuthenticationError):
@@ -226,7 +234,11 @@ class ConversationState:
     summary: Optional[CaseSummary] = None
 
 
-SESSION_DB_PATH = Path(__file__).with_name(".agent_sessions.db")
+# Preserve the original local database paths unless deployment explicitly sets
+# DATA_DIR (Compose uses /app/.data for its named volume).
+DATA_DIR = Path(os.environ.get("DATA_DIR", Path(__file__).parent))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+SESSION_DB_PATH = DATA_DIR / ".agent_sessions.db"
 
 
 class EcommerceChatKitServer(ChatKitServer[dict[str, Any]]):
